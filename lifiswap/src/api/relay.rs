@@ -11,31 +11,58 @@ use crate::types::{
 impl LiFiClient {
     /// Get a relayer quote for a gasless token transfer.
     ///
+    /// Fields not set on the request are filled from
+    /// [`LiFiConfig::route_options`](crate::client::LiFiConfig::route_options) if configured.
+    ///
     /// # Errors
     ///
     /// Returns [`LiFiError`] on network or API errors.
     pub async fn get_relayer_quote(&self, params: &QuoteRequest) -> Result<LiFiStep> {
+        let defaults = self.inner.config.route_options.as_ref();
         let integrator = &self.inner.config.integrator;
-        let integrator_val = params.integrator.as_deref().unwrap_or(integrator);
 
-        let mut query = vec![
-            ("fromChain", params.from_chain.as_str()),
-            ("fromToken", params.from_token.as_str()),
-            ("fromAddress", params.from_address.as_str()),
-            ("fromAmount", params.from_amount.as_str()),
-            ("toChain", params.to_chain.as_str()),
-            ("toToken", params.to_token.as_str()),
-            ("integrator", integrator_val),
+        let mut query: Vec<(String, String)> = vec![
+            ("fromChain".into(), params.from_chain.clone()),
+            ("fromToken".into(), params.from_token.clone()),
+            ("fromAddress".into(), params.from_address.clone()),
+            ("fromAmount".into(), params.from_amount.clone()),
+            ("toChain".into(), params.to_chain.clone()),
+            ("toToken".into(), params.to_token.clone()),
+            (
+                "integrator".into(),
+                params
+                    .integrator
+                    .clone()
+                    .unwrap_or_else(|| integrator.clone()),
+            ),
         ];
 
-        let slippage_str;
-        if let Some(s) = params.slippage {
-            slippage_str = s.to_string();
-            query.push(("slippage", &slippage_str));
+        let eff_slippage = params
+            .slippage
+            .or_else(|| defaults.and_then(|d| d.slippage));
+        if let Some(s) = eff_slippage {
+            query.push(("slippage".into(), s.to_string()));
         }
 
-        if let Some(ref r) = params.referrer {
-            query.push(("referrer", r.as_str()));
+        let eff_referrer = params
+            .referrer
+            .as_deref()
+            .or_else(|| defaults.and_then(|d| d.referrer.as_deref()));
+        if let Some(r) = eff_referrer {
+            query.push(("referrer".into(), r.to_owned()));
+        }
+
+        let eff_fee = params.fee.or_else(|| defaults.and_then(|d| d.fee));
+        if let Some(f) = eff_fee {
+            query.push(("fee".into(), f.to_string()));
+        }
+
+        let eff_order = params.order.or_else(|| defaults.and_then(|d| d.order));
+        if let Some(o) = eff_order
+            && let Ok(v) = serde_json::to_value(o)
+            && let Some(s) = v.as_str()
+        {
+            query.push(("order".into(), s.to_owned()));
         }
 
         let base = url::Url::parse(&format!("{}/relayer/quote", self.api_url()))?;

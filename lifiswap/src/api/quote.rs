@@ -2,10 +2,15 @@
 
 use crate::client::LiFiClient;
 use crate::error::{LiFiError, Result};
-use crate::types::{ContractCallsQuoteRequest, LiFiStep, QuoteRequest, QuoteToAmountRequest};
+use crate::types::{
+    ContractCallsQuoteRequest, LiFiStep, QuoteRequest, QuoteToAmountRequest, RouteOptions,
+};
 
 impl LiFiClient {
     /// Get a quote for a token transfer using `fromAmount`.
+    ///
+    /// Fields not set on the request are filled from
+    /// [`LiFiConfig::route_options`](crate::client::LiFiConfig::route_options) if configured.
     ///
     /// # Errors
     ///
@@ -33,38 +38,33 @@ impl LiFiClient {
             ));
         }
 
+        let defaults = self.inner.config.route_options.as_ref();
         let integrator = &self.inner.config.integrator;
-        let integrator_val = params.integrator.as_deref().unwrap_or(integrator);
 
-        let mut query = vec![
-            ("fromChain", params.from_chain.as_str()),
-            ("fromToken", params.from_token.as_str()),
-            ("fromAddress", params.from_address.as_str()),
-            ("fromAmount", params.from_amount.as_str()),
-            ("toChain", params.to_chain.as_str()),
-            ("toToken", params.to_token.as_str()),
-            ("integrator", integrator_val),
+        let mut query: Vec<(String, String)> = vec![
+            ("fromChain".into(), params.from_chain.clone()),
+            ("fromToken".into(), params.from_token.clone()),
+            ("fromAddress".into(), params.from_address.clone()),
+            ("fromAmount".into(), params.from_amount.clone()),
+            ("toChain".into(), params.to_chain.clone()),
+            ("toToken".into(), params.to_token.clone()),
+            (
+                "integrator".into(),
+                params
+                    .integrator
+                    .clone()
+                    .unwrap_or_else(|| integrator.clone()),
+            ),
         ];
 
         if let Some(ref addr) = params.to_address {
-            query.push(("toAddress", addr.as_str()));
+            query.push(("toAddress".into(), addr.clone()));
         }
 
-        let slippage_str;
-        if let Some(s) = params.slippage {
-            slippage_str = s.to_string();
-            query.push(("slippage", &slippage_str));
-        }
-
-        let fee_str;
-        if let Some(f) = params.fee {
-            fee_str = f.to_string();
-            query.push(("fee", &fee_str));
-        }
-
-        if let Some(ref r) = params.referrer {
-            query.push(("referrer", r.as_str()));
-        }
+        Self::push_route_option_params(
+            &mut query,
+            QuoteRouteFields::resolve(params, defaults),
+        );
 
         let base = url::Url::parse(&format!("{}/quote", self.api_url()))?;
         let url = url::Url::parse_with_params(base.as_str(), &query)?;
@@ -74,28 +74,40 @@ impl LiFiClient {
 
     /// Get a quote for a token transfer using `toAmount` (reverse quote).
     ///
+    /// Fields not set on the request are filled from
+    /// [`LiFiConfig::route_options`](crate::client::LiFiConfig::route_options) if configured.
+    ///
     /// # Errors
     ///
     /// Returns [`LiFiError`] on validation, network, or API errors.
     pub async fn get_quote_to_amount(&self, params: &QuoteToAmountRequest) -> Result<LiFiStep> {
+        let defaults = self.inner.config.route_options.as_ref();
         let integrator = &self.inner.config.integrator;
-        let integrator_val = params.integrator.as_deref().unwrap_or(integrator);
 
-        let mut query = vec![
-            ("fromChain", params.from_chain.as_str()),
-            ("fromToken", params.from_token.as_str()),
-            ("fromAddress", params.from_address.as_str()),
-            ("toAmount", params.to_amount.as_str()),
-            ("toChain", params.to_chain.as_str()),
-            ("toToken", params.to_token.as_str()),
-            ("integrator", integrator_val),
+        let mut query: Vec<(String, String)> = vec![
+            ("fromChain".into(), params.from_chain.clone()),
+            ("fromToken".into(), params.from_token.clone()),
+            ("fromAddress".into(), params.from_address.clone()),
+            ("toAmount".into(), params.to_amount.clone()),
+            ("toChain".into(), params.to_chain.clone()),
+            ("toToken".into(), params.to_token.clone()),
+            (
+                "integrator".into(),
+                params
+                    .integrator
+                    .clone()
+                    .unwrap_or_else(|| integrator.clone()),
+            ),
         ];
 
-        let slippage_str;
-        if let Some(s) = params.slippage {
-            slippage_str = s.to_string();
-            query.push(("slippage", &slippage_str));
+        if let Some(ref addr) = params.to_address {
+            query.push(("toAddress".into(), addr.clone()));
         }
+
+        Self::push_route_option_params(
+            &mut query,
+            QuoteRouteFields::resolve_basic(params.order, params.slippage, params.fee, params.referrer.as_deref(), defaults),
+        );
 
         let base = url::Url::parse(&format!("{}/quote/toAmount", self.api_url()))?;
         let url = url::Url::parse_with_params(base.as_str(), &query)?;
@@ -124,5 +136,121 @@ impl LiFiClient {
         }
 
         self.post("/quote/contractCalls", params).await
+    }
+
+    /// Push merged route option query params onto `query`.
+    fn push_route_option_params(
+        query: &mut Vec<(String, String)>,
+        fields: QuoteRouteFields,
+    ) {
+        if let Some(o) = fields.order
+            && let Ok(v) = serde_json::to_value(o)
+            && let Some(s) = v.as_str()
+        {
+            query.push(("order".into(), s.to_owned()));
+        }
+        if let Some(s) = fields.slippage {
+            query.push(("slippage".into(), s.to_string()));
+        }
+        if let Some(f) = fields.fee {
+            query.push(("fee".into(), f.to_string()));
+        }
+        if let Some(r) = fields.referrer {
+            query.push(("referrer".into(), r));
+        }
+        if let Some(v) = fields.allow_bridges {
+            query.push(("allowBridges".into(), v.join(",")));
+        }
+        if let Some(v) = fields.deny_bridges {
+            query.push(("denyBridges".into(), v.join(",")));
+        }
+        if let Some(v) = fields.prefer_bridges {
+            query.push(("preferBridges".into(), v.join(",")));
+        }
+        if let Some(v) = fields.allow_exchanges {
+            query.push(("allowExchanges".into(), v.join(",")));
+        }
+        if let Some(v) = fields.deny_exchanges {
+            query.push(("denyExchanges".into(), v.join(",")));
+        }
+        if let Some(v) = fields.prefer_exchanges {
+            query.push(("preferExchanges".into(), v.join(",")));
+        }
+    }
+}
+
+/// Resolved route option fields after merging request-level values with config defaults.
+/// Owns all data to avoid cross-lifetime borrowing issues.
+#[derive(Default)]
+struct QuoteRouteFields {
+    order: Option<crate::types::Order>,
+    slippage: Option<f64>,
+    fee: Option<f64>,
+    referrer: Option<String>,
+    allow_bridges: Option<Vec<String>>,
+    deny_bridges: Option<Vec<String>>,
+    prefer_bridges: Option<Vec<String>>,
+    allow_exchanges: Option<Vec<String>>,
+    deny_exchanges: Option<Vec<String>>,
+    prefer_exchanges: Option<Vec<String>>,
+}
+
+impl QuoteRouteFields {
+    /// Resolve all route option fields from a [`QuoteRequest`] + config defaults.
+    fn resolve(params: &QuoteRequest, defaults: Option<&RouteOptions>) -> Self {
+        let d = defaults.cloned().unwrap_or_default();
+        Self {
+            order: params.order.or(d.order),
+            slippage: params.slippage.or(d.slippage),
+            fee: params.fee.or(d.fee),
+            referrer: params
+                .referrer
+                .clone()
+                .or(d.referrer),
+            allow_bridges: params
+                .allow_bridges
+                .clone()
+                .or_else(|| d.bridges.as_ref().and_then(|b| b.allow.clone())),
+            deny_bridges: params
+                .deny_bridges
+                .clone()
+                .or_else(|| d.bridges.as_ref().and_then(|b| b.deny.clone())),
+            prefer_bridges: params
+                .prefer_bridges
+                .clone()
+                .or_else(|| d.bridges.as_ref().and_then(|b| b.prefer.clone())),
+            allow_exchanges: params
+                .allow_exchanges
+                .clone()
+                .or_else(|| d.exchanges.as_ref().and_then(|b| b.allow.clone())),
+            deny_exchanges: params
+                .deny_exchanges
+                .clone()
+                .or_else(|| d.exchanges.as_ref().and_then(|b| b.deny.clone())),
+            prefer_exchanges: params
+                .prefer_exchanges
+                .clone()
+                .or_else(|| d.exchanges.as_ref().and_then(|b| b.prefer.clone())),
+        }
+    }
+
+    /// Resolve basic fields (order, slippage, fee, referrer) only.
+    fn resolve_basic(
+        order: Option<crate::types::Order>,
+        slippage: Option<f64>,
+        fee: Option<f64>,
+        referrer: Option<&str>,
+        defaults: Option<&RouteOptions>,
+    ) -> Self {
+        let d = defaults.cloned().unwrap_or_default();
+        Self {
+            order: order.or(d.order),
+            slippage: slippage.or(d.slippage),
+            fee: fee.or(d.fee),
+            referrer: referrer
+                .map(String::from)
+                .or(d.referrer),
+            ..Self::default()
+        }
     }
 }
