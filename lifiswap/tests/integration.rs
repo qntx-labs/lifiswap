@@ -233,7 +233,7 @@ async fn get_status_success() {
         .build();
 
     let resp = client.get_status(&req).await.expect("get_status failed");
-    assert_eq!(resp.status, "DONE");
+    assert_eq!(resp.status, lifiswap::types::TransferStatus::Done);
 }
 
 #[tokio::test]

@@ -4,6 +4,22 @@ use serde::{Deserialize, Serialize};
 
 use super::{ChainId, Token};
 
+/// Overall status of a cross-chain transfer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TransferStatus {
+    /// Transfer completed successfully.
+    Done,
+    /// Transfer is pending / in progress.
+    Pending,
+    /// Transfer failed.
+    Failed,
+    /// Transfer data is invalid.
+    Invalid,
+    /// Transfer not found.
+    NotFound,
+}
+
 /// Request parameters for checking transfer status.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
@@ -98,8 +114,8 @@ pub struct StatusResponse {
     /// Tool/bridge used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
-    /// Overall status (e.g. "DONE", "PENDING", "FAILED", "`NOT_FOUND`").
-    pub status: String,
+    /// Overall transfer status.
+    pub status: TransferStatus,
     /// Substatus for more detail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub substatus: Option<String>,

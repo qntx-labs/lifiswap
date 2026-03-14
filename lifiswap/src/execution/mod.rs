@@ -17,7 +17,6 @@
 //!               └─ WaitForTransactionStatusTask
 //! ```
 
-pub mod balance;
 pub mod convert;
 pub mod engine;
 pub mod messages;

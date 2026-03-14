@@ -82,22 +82,9 @@ impl StatusManager {
             self.update_step_in_route(step);
         }
 
-        // SAFETY: we just set execution above if it was None
-        step.execution.clone().unwrap_or_else(|| StepExecution {
-            started_at: now_ms(),
-            signed_at: None,
-            status: ExecutionStatus::Pending,
-            actions: Vec::new(),
-            last_action_type: None,
-            from_amount: None,
-            to_amount: None,
-            to_token: None,
-            fee_costs: None,
-            gas_costs: None,
-            internal_tx_link: None,
-            external_tx_link: None,
-            error: None,
-        })
+        step.execution
+            .clone()
+            .expect("execution was just initialized above")
     }
 
     /// Update the execution state of a step with partial data.
@@ -359,7 +346,7 @@ pub struct ActionUpdateParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Action, ChainId, Token};
+    use crate::types::{Action, ChainId, StepType, Token};
 
     fn dummy_token() -> Token {
         Token {
@@ -378,7 +365,7 @@ mod tests {
         LiFiStepExtended {
             step: crate::types::LiFiStep {
                 id: id.to_owned(),
-                step_type: "swap".to_owned(),
+                step_type: StepType::Swap,
                 tool: None,
                 tool_details: None,
                 action: Action {

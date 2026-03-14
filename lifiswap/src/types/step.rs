@@ -2,7 +2,24 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{ChainId, FeeCost, GasCost, Insurance, Token, TransactionRequest};
+use super::{
+    ChainId, ExecutionActionStatus, ExecutionActionType, ExecutionStatus, FeeCost, GasCost,
+    Insurance, Token, TransactionRequest,
+};
+
+/// Type of a route step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StepType {
+    /// Same-chain token swap.
+    Swap,
+    /// Cross-chain bridge transfer.
+    Cross,
+    /// Aggregated LI.FI step (may contain sub-steps).
+    Lifi,
+    /// Protocol-specific interaction.
+    Protocol,
+}
 
 /// Action describing what a step does.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,9 +92,9 @@ pub struct Estimate {
 pub struct IncludedStep {
     /// Unique step identifier.
     pub id: String,
-    /// Step type (e.g. "swap", "cross", "lifi").
+    /// Step type.
     #[serde(rename = "type")]
-    pub step_type: String,
+    pub step_type: StepType,
     /// Tool used for this step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
@@ -128,9 +145,9 @@ pub struct TypedData {
 pub struct LiFiStep {
     /// Unique step identifier.
     pub id: String,
-    /// Step type (e.g. "swap", "cross", "lifi").
+    /// Step type.
     #[serde(rename = "type")]
-    pub step_type: String,
+    pub step_type: StepType,
     /// Tool used for this step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
@@ -186,13 +203,13 @@ pub struct SignedTypedData {
     pub signature: Option<String>,
 }
 
-/// Execution status of a step.
+/// Execution status of a step (API wire type).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Execution {
     /// Current execution status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub status: Option<ExecutionStatus>,
     /// Execution process details.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub process: Option<Vec<ExecutionProcess>>,
@@ -220,12 +237,12 @@ pub struct Execution {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionProcess {
-    /// Process type (e.g. `TOKEN_ALLOWANCE`, `SWAP`, `CROSS_CHAIN`).
+    /// Process type.
     #[serde(rename = "type")]
-    pub process_type: String,
+    pub process_type: ExecutionActionType,
     /// Process status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub status: Option<ExecutionActionStatus>,
     /// Status message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,

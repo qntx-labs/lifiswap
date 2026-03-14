@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::{ChainId, FeeCost, GasCost, Token};
 
 /// Callback invoked whenever a route is updated during execution.
-pub type UpdateRouteHook = Box<dyn Fn(&RouteExtended) + Send + Sync>;
+pub type UpdateRouteHook = Arc<dyn Fn(&RouteExtended) + Send + Sync>;
 
 /// Parameters passed to the exchange rate update hook.
 #[derive(Debug, Clone)]

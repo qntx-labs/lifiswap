@@ -113,7 +113,8 @@ mod tests {
     use crate::execution::status::StatusManager;
     use crate::provider::Provider;
     use crate::types::{
-        Action, ChainId, ChainType, LiFiStepExtended, StepExecutorOptions, Token, TokenAmount,
+        Action, ChainId, ChainType, LiFiStepExtended, StepExecutorOptions, StepType, Token,
+        TokenAmount,
     };
 
     struct MockProvider;
@@ -163,7 +164,7 @@ mod tests {
         LiFiStepExtended {
             step: crate::types::LiFiStep {
                 id: "s1".to_owned(),
-                step_type: "swap".to_owned(),
+                step_type: StepType::Swap,
                 tool: None,
                 tool_details: None,
                 action: Action {

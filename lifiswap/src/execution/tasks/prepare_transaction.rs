@@ -59,7 +59,6 @@ impl ExecutionTask for PrepareTransactionTask {
                 });
 
             let validated = step_comparison(
-                ctx.status_manager,
                 &old_step,
                 updated_step.clone(),
                 ctx.allow_user_interaction,

@@ -1,7 +1,7 @@
 //! Wait for transaction status task — polls the status API until completion.
 //!
 //! During polling, intermediate `PENDING` substatus updates are propagated
-//! to the action via [`StatusManager`], matching the TypeScript SDK behavior.
+//! to the action via [`StatusManager`], matching the `TypeScript` SDK behavior.
 
 use async_trait::async_trait;
 
@@ -9,7 +9,9 @@ use crate::error::{LiFiError, LiFiErrorCode, Result};
 use crate::execution::messages::get_substatus_message;
 use crate::execution::status::ExecutionUpdate;
 use crate::execution::task::{ExecutionContext, ExecutionTask};
-use crate::types::{ExecutionActionStatus, ExecutionActionType, ExecutionStatus, TaskStatus};
+use crate::types::{
+    ExecutionActionStatus, ExecutionActionType, ExecutionStatus, TaskStatus, TransferStatus,
+};
 
 /// Polls the LI.FI status API until the transaction reaches a terminal state.
 ///
@@ -156,9 +158,9 @@ async fn poll_transaction_status(
             }
         };
 
-        match status.status.as_str() {
-            "DONE" => return Ok(status),
-            "FAILED" | "INVALID" => {
+        match status.status {
+            TransferStatus::Done => return Ok(status),
+            TransferStatus::Failed | TransferStatus::Invalid => {
                 return Err(LiFiError::Transaction {
                     code: LiFiErrorCode::TransactionFailed,
                     message: format!(
@@ -170,15 +172,12 @@ async fn poll_transaction_status(
                     ),
                 });
             }
-            "PENDING" => {
-                let substatus_msg = status
-                    .substatus_message
-                    .clone()
-                    .or_else(|| {
-                        status.substatus.as_deref().and_then(|sub| {
-                            get_substatus_message("PENDING", Some(sub)).map(String::from)
-                        })
-                    });
+            TransferStatus::Pending => {
+                let substatus_msg = status.substatus_message.clone().or_else(|| {
+                    status.substatus.as_deref().and_then(|sub| {
+                        get_substatus_message("PENDING", Some(sub)).map(String::from)
+                    })
+                });
 
                 let _ = status_manager.update_action(
                     step,
@@ -192,7 +191,7 @@ async fn poll_transaction_status(
                     }),
                 );
             }
-            _ => {}
+            TransferStatus::NotFound => {}
         }
 
         attempts += 1;

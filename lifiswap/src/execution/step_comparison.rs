@@ -3,7 +3,6 @@
 //! Mirrors the `TypeScript` SDK's `stepComparison.ts` and `checkStepSlippageThreshold`.
 
 use crate::error::{LiFiError, LiFiErrorCode, Result};
-use crate::execution::status::StatusManager;
 use crate::types::{ExchangeRateUpdateParams, LiFiStep};
 
 const STANDARD_THRESHOLD: f64 = 0.005;
@@ -48,7 +47,6 @@ pub fn check_step_slippage_threshold(old_step: &LiFiStep, new_step: &LiFiStep) -
 ///
 /// Returns the updated step if accepted, or an error if rejected.
 pub async fn step_comparison(
-    status_manager: &StatusManager,
     old_step: &LiFiStep,
     new_step: LiFiStep,
     allow_user_interaction: bool,
@@ -90,14 +88,13 @@ pub async fn step_comparison(
         });
     }
 
-    let _ = status_manager;
     Ok(new_step)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Action, ChainId, Estimate, Token};
+    use crate::types::{Action, ChainId, Estimate, StepType, Token};
 
     fn make_token() -> Token {
         Token {
@@ -115,7 +112,7 @@ mod tests {
     fn make_step(slippage: f64, to_amount_min: &str) -> LiFiStep {
         LiFiStep {
             id: "s1".to_owned(),
-            step_type: "swap".to_owned(),
+            step_type: StepType::Swap,
             tool: None,
             tool_details: None,
             action: Action {

@@ -124,7 +124,7 @@ pub fn convert_quote_to_route(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Action, ChainId, Estimate, Token};
+    use crate::types::{Action, ChainId, Estimate, StepType, Token};
 
     fn test_token(chain_id: u64) -> Token {
         Token {
@@ -142,7 +142,7 @@ mod tests {
     fn test_quote() -> LiFiStep {
         LiFiStep {
             id: "step-1".to_owned(),
-            step_type: "swap".to_owned(),
+            step_type: StepType::Swap,
             tool: Some("uniswap".to_owned()),
             tool_details: None,
             action: Action {

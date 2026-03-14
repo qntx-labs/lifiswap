@@ -118,7 +118,7 @@ impl Default for ExecutionState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Action, ChainId, ExecutionOptions, LiFiStepExtended, Token};
+    use crate::types::{Action, ChainId, ExecutionOptions, LiFiStepExtended, StepType, Token};
 
     fn dummy_token() -> Token {
         Token {
@@ -137,7 +137,7 @@ mod tests {
         LiFiStepExtended {
             step: crate::types::LiFiStep {
                 id: id.to_owned(),
-                step_type: "swap".to_owned(),
+                step_type: StepType::Swap,
                 tool: None,
                 tool_details: None,
                 action: Action {

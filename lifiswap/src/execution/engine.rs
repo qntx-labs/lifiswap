@@ -5,11 +5,32 @@
 
 use crate::LiFiClient;
 use crate::error::{LiFiError, LiFiErrorCode, Result};
-use crate::provider::Provider;
+use crate::provider::{Provider, StepExecutor};
 use crate::types::{
     ExecutionOptions, ExecutionStatus, InteractionSettings, Route, RouteExtended,
     StepExecutorOptions,
 };
+
+async fn create_executor(
+    provider: &dyn Provider,
+    route_id: String,
+    execute_in_background: bool,
+) -> Result<Box<dyn StepExecutor>> {
+    let mut executor = provider
+        .create_step_executor(StepExecutorOptions {
+            route_id,
+            execute_in_background,
+        })
+        .await?;
+    if execute_in_background {
+        executor.set_interaction(InteractionSettings {
+            allow_interaction: false,
+            allow_updates: true,
+            allow_execution: true,
+        });
+    }
+    Ok(executor)
+}
 
 impl LiFiClient {
     /// Execute a route from start to finish.
@@ -73,16 +94,6 @@ impl LiFiClient {
         }
 
         crate::execution::prepare_restart(&mut route);
-        self.execute_route_extended(route, providers, options).await
-    }
-
-    /// Execute a pre-extended route (used by `resume_route` after `prepare_restart`).
-    async fn execute_route_extended(
-        &self,
-        route: RouteExtended,
-        providers: &[Box<dyn Provider>],
-        options: ExecutionOptions,
-    ) -> Result<RouteExtended> {
         self.execute_steps(route, providers, options).await
     }
 
@@ -245,26 +256,14 @@ impl LiFiClient {
                     ),
                 })?;
 
-            let mut executor = provider
-                .create_step_executor(StepExecutorOptions {
-                    route_id: route.id.clone(),
-                    execute_in_background,
-                })
-                .await?;
-
-            if execute_in_background {
-                executor.set_interaction(InteractionSettings {
-                    allow_interaction: false,
-                    allow_updates: true,
-                    allow_execution: true,
-                });
-            }
+            let mut executor =
+                create_executor(provider.as_ref(), route.id.clone(), execute_in_background).await?;
 
             let step_ref = &mut route.steps[step_idx];
 
             tracing::info!(
                 step_id = %step_ref.step.id,
-                step_type = %step_ref.step.step_type,
+                step_type = ?step_ref.step.step_type,
                 "executing step"
             );
 
@@ -280,23 +279,12 @@ impl LiFiClient {
                         "step retry requested, clearing execution and retrying"
                     );
                     step_ref.execution = None;
-                    let mut retry_executor = provider
-                        .create_step_executor(StepExecutorOptions {
-                            route_id: route.id.clone(),
-                            execute_in_background,
-                        })
-                        .await?;
-                    if execute_in_background {
-                        retry_executor.set_interaction(InteractionSettings {
-                            allow_interaction: false,
-                            allow_updates: true,
-                            allow_execution: true,
-                        });
-                    }
-                    retry_executor
+                    executor =
+                        create_executor(provider.as_ref(), route.id.clone(), execute_in_background)
+                            .await?;
+                    executor
                         .execute_step(self, step_ref, provider.as_ref())
                         .await?;
-                    executor = retry_executor;
                 }
                 Err(e) => return Err(e),
             }
