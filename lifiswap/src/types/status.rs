@@ -106,6 +106,9 @@ pub struct StatusResponse {
     /// Substatus message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub substatus_message: Option<String>,
+    /// Bridge explorer link (for cross-chain transactions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bridge_explorer_link: Option<String>,
     /// Bridge-specific metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,

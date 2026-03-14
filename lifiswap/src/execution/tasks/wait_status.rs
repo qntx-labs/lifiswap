@@ -1,8 +1,12 @@
 //! Wait for transaction status task — polls the status API until completion.
+//!
+//! During polling, intermediate `PENDING` substatus updates are propagated
+//! to the action via [`StatusManager`], matching the TypeScript SDK behavior.
 
 use async_trait::async_trait;
 
 use crate::error::{LiFiError, LiFiErrorCode, Result};
+use crate::execution::messages::get_substatus_message;
 use crate::execution::status::ExecutionUpdate;
 use crate::execution::task::{ExecutionContext, ExecutionTask};
 use crate::types::{ExecutionActionStatus, ExecutionActionType, ExecutionStatus, TaskStatus};
@@ -11,6 +15,9 @@ use crate::types::{ExecutionActionStatus, ExecutionActionType, ExecutionStatus, 
 ///
 /// This task handles both same-chain swaps and cross-chain bridge transactions.
 /// For bridges, it tracks the `RECEIVING_CHAIN` action separately.
+///
+/// Intermediate `PENDING` responses update the action's substatus and
+/// substatus message so callers can display progress to the user.
 #[derive(Debug, Clone, Copy)]
 pub struct WaitForTransactionStatusTask {
     action_type: ExecutionActionType,
@@ -69,7 +76,14 @@ impl ExecutionTask for WaitForTransactionStatusTask {
             ExecutionActionStatus::Pending,
         )?;
 
-        let status_response = poll_transaction_status(ctx.client, &tx_hash).await?;
+        let status_response = poll_transaction_status(
+            ctx.client,
+            ctx.status_manager,
+            ctx.step,
+            self.action_type,
+            &tx_hash,
+        )
+        .await?;
 
         ctx.status_manager.update_action(
             ctx.step,
@@ -113,6 +127,9 @@ impl ExecutionTask for WaitForTransactionStatusTask {
 
 async fn poll_transaction_status(
     client: &crate::LiFiClient,
+    status_manager: &crate::execution::StatusManager,
+    step: &mut crate::types::LiFiStepExtended,
+    action_type: ExecutionActionType,
     tx_hash: &str,
 ) -> Result<crate::types::StatusResponse> {
     use crate::types::StatusRequest;
@@ -123,7 +140,21 @@ async fn poll_transaction_status(
     loop {
         let status = client
             .get_status(&StatusRequest::builder().tx_hash(tx_hash).build())
-            .await?;
+            .await;
+
+        let status = match status {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::debug!(error = %e, "status poll failed, retrying");
+                attempts += 1;
+                if attempts >= max_attempts {
+                    return Err(e);
+                }
+                let delay = std::cmp::min(5000 + u64::from(attempts) * 1000, 30_000);
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                continue;
+            }
+        };
 
         match status.status.as_str() {
             "DONE" => return Ok(status),
@@ -139,17 +170,39 @@ async fn poll_transaction_status(
                     ),
                 });
             }
-            _ => {
-                attempts += 1;
-                if attempts >= max_attempts {
-                    return Err(LiFiError::Transaction {
-                        code: LiFiErrorCode::Timeout,
-                        message: "Timed out waiting for transaction status.".to_owned(),
+            "PENDING" => {
+                let substatus_msg = status
+                    .substatus_message
+                    .clone()
+                    .or_else(|| {
+                        status.substatus.as_deref().and_then(|sub| {
+                            get_substatus_message("PENDING", Some(sub)).map(String::from)
+                        })
                     });
-                }
-                let delay = std::cmp::min(5000 + u64::from(attempts) * 1000, 30_000);
-                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+
+                let _ = status_manager.update_action(
+                    step,
+                    action_type,
+                    ExecutionActionStatus::Pending,
+                    Some(crate::execution::status::ActionUpdateParams {
+                        substatus: status.substatus.clone(),
+                        substatus_message: substatus_msg,
+                        tx_link: status.bridge_explorer_link.clone(),
+                        ..Default::default()
+                    }),
+                );
             }
+            _ => {}
         }
+
+        attempts += 1;
+        if attempts >= max_attempts {
+            return Err(LiFiError::Transaction {
+                code: LiFiErrorCode::Timeout,
+                message: "Timed out waiting for transaction status.".to_owned(),
+            });
+        }
+        let delay = std::cmp::min(5000 + u64::from(attempts) * 1000, 30_000);
+        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
     }
 }
