@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn with_route_noop_on_missing() {
         let state = ExecutionState::new();
-        state.with_route("missing", |_| panic!("should not be called"));
+        state.with_route("missing", |_| unreachable!("closure should not be called"));
     }
 
     #[test]

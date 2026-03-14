@@ -204,8 +204,9 @@ mod tests {
         async fn should_run(&self, _ctx: &ExecutionContext<'_>) -> bool {
             false
         }
+        #[allow(clippy::unimplemented)]
         async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-            panic!("should never run");
+            unreachable!("SkippedTask::run should never be called");
         }
     }
 
