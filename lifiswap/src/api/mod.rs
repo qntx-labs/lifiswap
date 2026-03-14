@@ -6,6 +6,7 @@
 mod chains;
 mod connections;
 mod gas;
+mod patcher;
 mod quote;
 mod relay;
 mod routes;
@@ -13,3 +14,4 @@ mod status;
 mod step_transaction;
 mod tokens;
 mod tools;
+mod wallet;

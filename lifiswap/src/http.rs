@@ -75,7 +75,7 @@ impl LiFiClient {
     pub(crate) async fn post<T: DeserializeOwned>(
         &self,
         path: &str,
-        body: &(impl serde::Serialize + Sync),
+        body: &(impl serde::Serialize + Sync + ?Sized),
     ) -> crate::error::Result<T> {
         let url = format!("{}{path}", self.inner.config.api_url);
         let json = serde_json::to_value(body)?;
