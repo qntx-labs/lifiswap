@@ -148,7 +148,11 @@ mod tests {
             _options: StepExecutorOptions,
         ) -> Pin<Box<dyn Future<Output = Result<Box<dyn crate::provider::StepExecutor>>> + Send + 'a>>
         {
-            unimplemented!()
+            Box::pin(async {
+                Err(crate::error::LiFiError::Config(
+                    "MockProvider does not support step execution".to_owned(),
+                ))
+            })
         }
     }
 

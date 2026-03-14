@@ -140,11 +140,8 @@ impl Provider for EvmProvider {
         Box::pin(async move {
             let wallet = EthereumWallet::from(self.signer.clone());
 
-            let executor: Box<dyn StepExecutor> = Box::new(EvmStepExecutor::new(
-                wallet,
-                self.rpc_url.clone(),
-                options,
-            ));
+            let executor: Box<dyn StepExecutor> =
+                Box::new(EvmStepExecutor::new(wallet, self.rpc_url.clone(), options));
             Ok(executor)
         })
     }

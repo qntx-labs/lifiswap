@@ -223,15 +223,12 @@ impl ExecutionTask for EvmSignAndExecuteTask {
         ctx: &'a mut ExecutionContext<'_>,
     ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
         Box::pin(async move {
-            let tx_request =
-                ctx.step
-                    .step
-                    .transaction_request
-                    .as_ref()
-                    .ok_or_else(|| LiFiError::Transaction {
-                        code: LiFiErrorCode::InternalError,
-                        message: "No transaction request data available.".to_owned(),
-                    })?;
+            let tx_request = ctx.step.step.transaction_request.as_ref().ok_or_else(|| {
+                LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: "No transaction request data available.".to_owned(),
+                }
+            })?;
 
             let to_addr: Address = tx_request
                 .to
@@ -253,9 +250,7 @@ impl ExecutionTask for EvmSignAndExecuteTask {
 
             let call_data: alloy::primitives::Bytes = data
                 .parse()
-                .map_err(|_| {
-                    LiFiError::Validation("Invalid transaction data hex.".to_owned())
-                })?;
+                .map_err(|_| LiFiError::Validation("Invalid transaction data hex.".to_owned()))?;
 
             let value: U256 = tx_request
                 .value
@@ -292,13 +287,14 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 ExecutionActionType::Swap
             };
 
-            let pending = provider
-                .send_transaction(tx)
-                .await
-                .map_err(|e| LiFiError::Transaction {
-                    code: LiFiErrorCode::TransactionFailed,
-                    message: format!("Send transaction failed: {e}"),
-                })?;
+            let pending =
+                provider
+                    .send_transaction(tx)
+                    .await
+                    .map_err(|e| LiFiError::Transaction {
+                        code: LiFiErrorCode::TransactionFailed,
+                        message: format!("Send transaction failed: {e}"),
+                    })?;
 
             let tx_hash = *pending.tx_hash();
             tracing::info!(tx = %tx_hash, "transaction sent");
