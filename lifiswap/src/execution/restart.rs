@@ -1,6 +1,6 @@
 //! Prepare a route for restart after a failed or paused execution.
 //!
-//! Mirrors the TypeScript SDK's `prepareRestart.ts`: resets execution
+//! Mirrors the `TypeScript` SDK's `prepareRestart.ts`: resets execution
 //! actions on each step so the route can be re-executed cleanly.
 
 use crate::types::{ExecutionActionStatus, ExecutionActionType, RouteExtended};

@@ -42,7 +42,7 @@ impl LiFiClient {
 
     /// Resume a previously started (and possibly failed/paused) route.
     ///
-    /// Mirrors the TypeScript SDK's `resumeRoute` logic:
+    /// Mirrors the `TypeScript` SDK's `resumeRoute` logic:
     /// 1. If the route is still actively executing and not halted,
     ///    updates execution options and returns the current route state.
     /// 2. Otherwise, calls [`prepare_restart`] to clean up stale actions
@@ -268,9 +268,38 @@ impl LiFiClient {
                 "executing step"
             );
 
-            executor
+            match executor
                 .execute_step(self, step_ref, provider.as_ref())
-                .await?;
+                .await
+            {
+                Ok(()) => {}
+                Err(LiFiError::StepRetry { message, .. }) => {
+                    tracing::info!(
+                        step_id = %step_ref.step.id,
+                        reason = %message,
+                        "step retry requested, clearing execution and retrying"
+                    );
+                    step_ref.execution = None;
+                    let mut retry_executor = provider
+                        .create_step_executor(StepExecutorOptions {
+                            route_id: route.id.clone(),
+                            execute_in_background,
+                        })
+                        .await?;
+                    if execute_in_background {
+                        retry_executor.set_interaction(InteractionSettings {
+                            allow_interaction: false,
+                            allow_updates: true,
+                            allow_execution: true,
+                        });
+                    }
+                    retry_executor
+                        .execute_step(self, step_ref, provider.as_ref())
+                        .await?;
+                    executor = retry_executor;
+                }
+                Err(e) => return Err(e),
+            }
 
             if step_ref
                 .execution

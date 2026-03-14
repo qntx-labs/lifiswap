@@ -1,12 +1,12 @@
 //! Human-readable messages for execution actions and substatuses.
 //!
-//! Mirrors the TypeScript SDK's `actionMessages.ts`.
+//! Mirrors the `TypeScript` SDK's `actionMessages.ts`.
 
 use crate::types::{ExecutionActionStatus, ExecutionActionType};
 
 /// Get a human-readable message for an action type + status combination.
 #[must_use]
-pub fn get_action_message(
+pub const fn get_action_message(
     action_type: ExecutionActionType,
     status: ExecutionActionStatus,
 ) -> Option<&'static str> {

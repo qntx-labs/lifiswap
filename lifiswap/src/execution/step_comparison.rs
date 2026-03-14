@@ -1,6 +1,6 @@
 //! Step comparison logic for exchange rate change detection.
 //!
-//! Mirrors the TypeScript SDK's `stepComparison.ts` and `checkStepSlippageThreshold`.
+//! Mirrors the `TypeScript` SDK's `stepComparison.ts` and `checkStepSlippageThreshold`.
 
 use crate::error::{LiFiError, LiFiErrorCode, Result};
 use crate::execution::status::StatusManager;
@@ -59,8 +59,8 @@ pub async fn step_comparison(
     }
 
     let mut allow_step_update = false;
-    if allow_user_interaction {
-        if let Some(hook) = accept_hook {
+    if allow_user_interaction
+        && let Some(hook) = accept_hook {
             let old_to_amount = old_step
                 .estimate
                 .as_ref()
@@ -79,7 +79,6 @@ pub async fn step_comparison(
             };
             allow_step_update = hook(params).await;
         }
-    }
 
     if !allow_step_update {
         return Err(LiFiError::Transaction {
