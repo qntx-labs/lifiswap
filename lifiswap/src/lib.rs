@@ -17,6 +17,38 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ## Builder Pattern
+//!
+//! All request types support ergonomic builders via [`bon`]:
+//!
+//! ```no_run
+//! use lifiswap::{LiFiClient, LiFiConfig};
+//! use lifiswap::types::QuoteRequest;
+//!
+//! # async fn example() -> lifiswap::error::Result<()> {
+//! let client = LiFiClient::new(
+//!     LiFiConfig::builder()
+//!         .integrator("my-app")
+//!         .api_key("sk-...")
+//!         .build(),
+//! )?;
+//!
+//! let quote = client
+//!     .get_quote(
+//!         &QuoteRequest::builder()
+//!             .from_chain("1")
+//!             .from_token("0xUSDC...")
+//!             .from_address("0xYourWallet...")
+//!             .from_amount("1000000")
+//!             .to_chain("137")
+//!             .to_token("0xUSDC_POL...")
+//!             .build(),
+//!     )
+//!     .await?;
+//! # Ok(())
+//! # }
+//! ```
 
 pub mod client;
 pub mod error;
