@@ -1,14 +1,28 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! # lifiswap
+//!
+//! A Rust SDK for the [LI.FI](https://li.fi) cross-chain swap and bridge aggregation API.
+//!
+//! ## Quick Start
+//!
+//! ```no_run
+//! use lifiswap::LiFiClient;
+//!
+//! # async fn example() -> lifiswap::error::Result<()> {
+//! let client = LiFiClient::builder()
+//!     .integrator("my-app")
+//!     .build()?;
+//!
+//! let chains = client.get_chains(None).await?;
+//! println!("supported chains: {}", chains.len());
+//! # Ok(())
+//! # }
+//! ```
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod client;
+pub mod error;
+pub mod types;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod api;
+mod http;
+
+pub use client::{LiFiClient, LiFiClientBuilder, LiFiConfig};

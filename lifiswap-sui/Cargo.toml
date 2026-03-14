@@ -1,0 +1,13 @@
+[package]
+name = "lifiswap-sui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "LiFi SDK - Sui chain provider"
+
+[dependencies]
+lifiswap = { workspace = true }
+
+[lints]
+workspace = true

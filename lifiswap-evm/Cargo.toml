@@ -1,0 +1,13 @@
+[package]
+name = "lifiswap-evm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "LiFi SDK - EVM chain provider (alloy-based)"
+
+[dependencies]
+lifiswap = { workspace = true }
+
+[lints]
+workspace = true
