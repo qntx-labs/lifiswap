@@ -29,7 +29,7 @@ pub struct ExecutionContext<'a> {
 impl std::fmt::Debug for ExecutionContext<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExecutionContext")
-            .field("step_id", &self.step.step.id)
+            .field("step_id", &self.step.id)
             .field("is_bridge_execution", &self.is_bridge_execution)
             .field("allow_user_interaction", &self.allow_user_interaction)
             .finish()
@@ -112,10 +112,7 @@ mod tests {
     use crate::execution::state::ExecutionState;
     use crate::execution::status::StatusManager;
     use crate::provider::Provider;
-    use crate::types::{
-        Action, ChainId, ChainType, LiFiStepExtended, StepExecutorOptions, StepType, Token,
-        TokenAmount,
-    };
+    use crate::types::{ChainType, LiFiStepExtended, StepExecutorOptions, Token, TokenAmount};
 
     struct MockProvider;
 
@@ -147,48 +144,7 @@ mod tests {
 
     static MOCK_PROVIDER: MockProvider = MockProvider;
 
-    fn dummy_token() -> Token {
-        Token {
-            address: "0x0".to_owned(),
-            decimals: 18,
-            symbol: "TST".to_owned(),
-            chain_id: ChainId(1),
-            coin_key: None,
-            name: "Test".to_owned(),
-            logo_uri: None,
-            price_usd: None,
-        }
-    }
-
-    fn dummy_step() -> LiFiStepExtended {
-        LiFiStepExtended {
-            step: crate::types::LiFiStep {
-                id: "s1".to_owned(),
-                step_type: StepType::Swap,
-                tool: None,
-                tool_details: None,
-                action: Action {
-                    from_chain_id: ChainId(1),
-                    to_chain_id: ChainId(1),
-                    from_token: dummy_token(),
-                    to_token: dummy_token(),
-                    from_amount: None,
-                    from_address: None,
-                    to_address: None,
-                    slippage: None,
-                    destination_call_data: None,
-                },
-                estimate: None,
-                included_steps: None,
-                integrator: None,
-                transaction_request: None,
-                execution: None,
-                typed_data: None,
-                insurance: None,
-            },
-            execution: None,
-        }
-    }
+    use crate::execution::test_helpers::dummy_step;
 
     fn make_ctx<'a>(
         client: &'a LiFiClient,
@@ -261,7 +217,7 @@ mod tests {
         .unwrap();
         let state = ExecutionState::new();
         let mgr = StatusManager::new("r1".to_owned(), state);
-        let mut step = dummy_step();
+        let mut step = dummy_step("s1");
 
         let counter = Arc::new(AtomicU32::new(0));
         let pipeline = TaskPipeline::new(vec![
@@ -285,7 +241,7 @@ mod tests {
         .unwrap();
         let state = ExecutionState::new();
         let mgr = StatusManager::new("r1".to_owned(), state);
-        let mut step = dummy_step();
+        let mut step = dummy_step("s1");
 
         let counter = Arc::new(AtomicU32::new(0));
         let pipeline = TaskPipeline::new(vec![
@@ -309,7 +265,7 @@ mod tests {
         .unwrap();
         let state = ExecutionState::new();
         let mgr = StatusManager::new("r1".to_owned(), state);
-        let mut step = dummy_step();
+        let mut step = dummy_step("s1");
 
         let counter = Arc::new(AtomicU32::new(0));
         let pipeline = TaskPipeline::new(vec![
@@ -333,7 +289,7 @@ mod tests {
         .unwrap();
         let state = ExecutionState::new();
         let mgr = StatusManager::new("r1".to_owned(), state);
-        let mut step = dummy_step();
+        let mut step = dummy_step("s1");
 
         let pipeline = TaskPipeline::new(vec![
             Box::new(CompletingTask),
@@ -355,7 +311,7 @@ mod tests {
         .unwrap();
         let state = ExecutionState::new();
         let mgr = StatusManager::new("r1".to_owned(), state);
-        let mut step = dummy_step();
+        let mut step = dummy_step("s1");
 
         let pipeline = TaskPipeline::new(vec![]);
         let result = pipeline.run(&mut make_ctx(&client, &mut step, &mgr)).await;

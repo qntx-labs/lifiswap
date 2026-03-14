@@ -39,6 +39,6 @@ pub fn prepare_restart(route: &mut RouteExtended) {
             execution.last_action_type = None;
         }
 
-        step.step.transaction_request = None;
+        step.transaction_request = None;
     }
 }

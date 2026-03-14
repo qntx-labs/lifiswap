@@ -28,6 +28,9 @@ pub mod step_comparison;
 pub mod task;
 pub mod tasks;
 
+#[cfg(test)]
+pub(crate) mod test_helpers;
+
 pub use convert::convert_quote_to_route;
 pub use messages::{get_action_message, get_substatus_message};
 pub use poll::wait_for_result;

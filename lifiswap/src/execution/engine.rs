@@ -49,16 +49,15 @@ impl LiFiClient {
     ///
     /// ```ignore
     /// let route = client.get_routes(&request).await?.routes.into_iter().next().unwrap();
-    /// let extended = client.execute_route(route, &providers, Default::default()).await?;
+    /// let extended = client.execute_route(route, Default::default()).await?;
     /// ```
     pub async fn execute_route(
         &self,
         route: Route,
-        providers: &[Box<dyn Provider>],
         options: ExecutionOptions,
     ) -> Result<RouteExtended> {
         let extended: RouteExtended = route.into();
-        self.execute_steps(extended, providers, options).await
+        self.execute_steps(extended, options).await
     }
 
     /// Resume a previously started (and possibly failed/paused) route.
@@ -75,7 +74,6 @@ impl LiFiClient {
     pub async fn resume_route(
         &self,
         mut route: RouteExtended,
-        providers: &[Box<dyn Provider>],
         options: ExecutionOptions,
     ) -> Result<RouteExtended> {
         let state = self.execution_state();
@@ -94,7 +92,7 @@ impl LiFiClient {
         }
 
         crate::execution::prepare_restart(&mut route);
-        self.execute_steps(route, providers, options).await
+        self.execute_steps(route, options).await
     }
 
     /// Stop execution of an active route.
@@ -163,7 +161,6 @@ impl LiFiClient {
     async fn execute_steps(
         &self,
         mut route: RouteExtended,
-        providers: &[Box<dyn Provider>],
         options: ExecutionOptions,
     ) -> Result<RouteExtended> {
         if route.steps.is_empty() {
@@ -177,7 +174,7 @@ impl LiFiClient {
         let chains = self.get_chains(None).await?;
 
         let result = self
-            .execute_steps_inner(&mut route, providers, &chains, execute_in_background)
+            .execute_steps_inner(&mut route, &chains, execute_in_background)
             .await;
 
         match result {
@@ -199,7 +196,6 @@ impl LiFiClient {
     async fn execute_steps_inner(
         &self,
         route: &mut RouteExtended,
-        providers: &[Box<dyn Provider>],
         chains: &[crate::types::Chain],
         execute_in_background: bool,
     ) -> Result<()> {
@@ -216,7 +212,7 @@ impl LiFiClient {
             if let Some(ref exec) = step.execution
                 && exec.status == ExecutionStatus::Done
             {
-                tracing::debug!(step_id = %step.step.id, "skipping completed step");
+                tracing::debug!(step_id = %step.id, "skipping completed step");
                 continue;
             }
 
@@ -245,25 +241,23 @@ impl LiFiClient {
                     message: format!("No chain info found for chain ID {from_chain_id:?}"),
                 })?;
 
-            let provider = providers
-                .iter()
-                .find(|p| p.chain_type() == chain.chain_type)
+            let chain_type = chain.chain_type;
+            let provider = self
+                .find_provider(|p| p.chain_type() == chain_type)
                 .ok_or_else(|| LiFiError::Provider {
                     code: LiFiErrorCode::ProviderUnavailable,
-                    message: format!(
-                        "No provider registered for chain type {:?}",
-                        chain.chain_type
-                    ),
+                    message: format!("No provider registered for chain type {chain_type:?}"),
                 })?;
 
+            let route_id = route.base.id.clone();
             let mut executor =
-                create_executor(provider.as_ref(), route.id.clone(), execute_in_background).await?;
+                create_executor(provider.as_ref(), route_id.clone(), execute_in_background).await?;
 
             let step_ref = &mut route.steps[step_idx];
 
             tracing::info!(
-                step_id = %step_ref.step.id,
-                step_type = ?step_ref.step.step_type,
+                step_id = %step_ref.id,
+                step_type = ?step_ref.step_type,
                 "executing step"
             );
 
@@ -274,13 +268,13 @@ impl LiFiClient {
                 Ok(()) => {}
                 Err(LiFiError::StepRetry { message, .. }) => {
                     tracing::info!(
-                        step_id = %step_ref.step.id,
+                        step_id = %step_ref.id,
                         reason = %message,
                         "step retry requested, clearing execution and retrying"
                     );
                     step_ref.execution = None;
                     executor =
-                        create_executor(provider.as_ref(), route.id.clone(), execute_in_background)
+                        create_executor(provider.as_ref(), route_id.clone(), execute_in_background)
                             .await?;
                     executor
                         .execute_step(self, step_ref, provider.as_ref())
@@ -295,13 +289,13 @@ impl LiFiClient {
                 .is_none_or(|e| e.status != ExecutionStatus::Done)
             {
                 tracing::info!(
-                    step_id = %step_ref.step.id,
+                    step_id = %step_ref.id,
                     "step not done, stopping route execution"
                 );
-                self.stop_route_execution(&route.id);
+                self.stop_route_execution(&route_id);
             }
 
-            state.with_route(&route.id, |data| {
+            state.with_route(&route_id, |data| {
                 if step_idx < data.route.steps.len() {
                     data.route.steps[step_idx] = step_ref.clone();
                 }

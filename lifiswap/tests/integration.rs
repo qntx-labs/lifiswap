@@ -326,7 +326,7 @@ async fn get_wallet_balances_success() {
     assert_eq!(balances.len(), 2);
     let eth_tokens = balances.get(&1).expect("chain 1 missing");
     assert_eq!(eth_tokens.len(), 1);
-    assert_eq!(eth_tokens[0].symbol, "USDC");
+    assert_eq!(eth_tokens[0].token.symbol, "USDC");
     assert_eq!(eth_tokens[0].amount.as_deref(), Some("1000000"));
 }
 

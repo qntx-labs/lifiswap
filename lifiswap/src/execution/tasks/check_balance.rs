@@ -33,7 +33,7 @@ impl ExecutionTask for CheckBalanceTask {
             ExecutionActionType::Swap
         };
 
-        let from_chain_id = ctx.step.step.action.from_chain_id.0;
+        let from_chain_id = ctx.step.action.from_chain_id.0;
 
         ctx.status_manager.initialize_action(
             ctx.step,
@@ -68,7 +68,7 @@ async fn check_balance(
     wallet_address: &str,
     depth: u32,
 ) -> Result<()> {
-    let from_token = ctx.step.step.action.from_token.clone();
+    let from_token = ctx.step.action.from_token.clone();
     let balances = ctx
         .provider
         .get_balance(wallet_address, &[from_token])
@@ -102,13 +102,13 @@ async fn check_balance(
         return Box::pin(check_balance(ctx, wallet_address, depth + 1)).await;
     }
 
-    let slippage = ctx.step.step.action.slippage.unwrap_or(0.0);
+    let slippage = ctx.step.action.slippage.unwrap_or(0.0);
     let slippage_factor = 1.0 - slippage;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let needed_with_slippage = (needed_balance as f64 * slippage_factor) as u128;
 
     if needed_with_slippage <= current_balance {
-        ctx.step.step.action.from_amount = Some(current_balance.to_string());
+        ctx.step.action.from_amount = Some(current_balance.to_string());
         tracing::info!(
             adjusted_amount = current_balance,
             "adjusted fromAmount within slippage tolerance"
@@ -116,8 +116,8 @@ async fn check_balance(
         return Ok(());
     }
 
-    let symbol = &token_balance.symbol;
-    let decimals = token_balance.decimals;
+    let symbol = &token_balance.token.symbol;
+    let decimals = token_balance.token.decimals;
     let needed_fmt = format_units(needed_balance, decimals);
     let current_fmt = format_units(current_balance, decimals);
 

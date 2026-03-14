@@ -44,7 +44,7 @@ impl ExecutionTask for PrepareTransactionTask {
                 message: "Unable to prepare transaction. Action not found.".to_owned(),
             })?;
 
-        if ctx.step.step.transaction_request.is_none() {
+        if ctx.step.transaction_request.is_none() {
             let old_step = ctx.step.step.clone();
             let updated_step = ctx.client.get_step_transaction(&old_step).await?;
 
@@ -66,12 +66,11 @@ impl ExecutionTask for PrepareTransactionTask {
             )
             .await?;
 
-            ctx.step.step.estimate = validated.estimate;
-            ctx.step.step.transaction_request = updated_step.transaction_request;
+            ctx.step.estimate = validated.estimate;
+            ctx.step.transaction_request = updated_step.transaction_request;
         }
 
         if ctx
-            .step
             .step
             .transaction_request
             .as_ref()

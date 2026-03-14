@@ -7,7 +7,6 @@ use std::collections::HashMap;
 
 use crate::LiFiClient;
 use crate::error::{LiFiError, LiFiErrorCode, Result};
-use crate::provider::Provider;
 use crate::types::{ChainId, Token, TokenAmount};
 
 impl LiFiClient {
@@ -23,10 +22,9 @@ impl LiFiClient {
         &self,
         wallet_address: &str,
         token: &Token,
-        providers: &[Box<dyn Provider>],
     ) -> Result<Option<TokenAmount>> {
         let balances = self
-            .get_token_balances(wallet_address, &[token.clone()], providers)
+            .get_token_balances(wallet_address, &[token.clone()])
             .await?;
         Ok(balances.into_iter().next())
     }
@@ -43,7 +41,6 @@ impl LiFiClient {
         &self,
         wallet_address: &str,
         tokens: &[Token],
-        providers: &[Box<dyn Provider>],
     ) -> Result<Vec<TokenAmount>> {
         let mut tokens_by_chain: HashMap<ChainId, Vec<Token>> = HashMap::new();
         for token in tokens {
@@ -54,7 +51,7 @@ impl LiFiClient {
         }
 
         let results = self
-            .get_token_balances_by_chain(wallet_address, &tokens_by_chain, providers)
+            .get_token_balances_by_chain(wallet_address, &tokens_by_chain)
             .await?;
 
         Ok(results.into_values().flatten().collect())
@@ -73,21 +70,21 @@ impl LiFiClient {
         &self,
         wallet_address: &str,
         tokens_by_chain: &HashMap<ChainId, Vec<Token>>,
-        providers: &[Box<dyn Provider>],
     ) -> Result<HashMap<ChainId, Vec<TokenAmount>>> {
         if wallet_address.is_empty() {
             return Err(LiFiError::Validation("Missing walletAddress.".to_owned()));
         }
 
-        let provider = providers
-            .iter()
-            .find(|p| p.is_address(wallet_address))
+        let wallet_addr = wallet_address.to_owned();
+        let provider = self
+            .find_provider(|p| p.is_address(&wallet_addr))
             .ok_or_else(|| LiFiError::Provider {
                 code: LiFiErrorCode::ProviderUnavailable,
                 message: format!("SDK Token Provider for {wallet_address} is not found."),
             })?;
 
         let chains = self.get_chains(None).await?;
+        let provider_chain_type = provider.chain_type();
 
         let mut result: HashMap<ChainId, Vec<TokenAmount>> = HashMap::new();
 
@@ -95,7 +92,7 @@ impl LiFiClient {
             let chain_type_matches = chains
                 .iter()
                 .find(|c| c.id == chain_id)
-                .is_some_and(|c| c.chain_type == provider.chain_type());
+                .is_some_and(|c| c.chain_type == provider_chain_type);
 
             if !chain_type_matches {
                 continue;

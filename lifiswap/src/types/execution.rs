@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use super::{ChainId, FeeCost, GasCost, Token};
+use super::{FeeCost, GasCost, Token};
 
 /// Callback invoked whenever a route is updated during execution.
 pub type UpdateRouteHook = Arc<dyn Fn(&RouteExtended) + Send + Sync>;
@@ -195,6 +195,10 @@ pub struct StepExecution {
 }
 
 /// A `LiFiStep` extended with mutable execution state.
+///
+/// Implements [`Deref`]/[`DerefMut`] to [`LiFiStep`](super::LiFiStep),
+/// so step fields can be accessed directly (e.g. `step.action` instead of
+/// `step.step.action`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiFiStepExtended {
@@ -206,67 +210,51 @@ pub struct LiFiStepExtended {
     pub execution: Option<StepExecution>,
 }
 
+impl std::ops::Deref for LiFiStepExtended {
+    type Target = super::LiFiStep;
+
+    fn deref(&self) -> &Self::Target {
+        &self.step
+    }
+}
+
+impl std::ops::DerefMut for LiFiStepExtended {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.step
+    }
+}
+
 /// A route extended with execution-aware steps.
+///
+/// Derefs to [`RouteBase`](super::RouteBase) for direct access to shared
+/// metadata fields (e.g. `route.id`, `route.from_token`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteExtended {
-    /// Unique route identifier.
-    pub id: String,
-    /// Source chain ID.
-    pub from_chain_id: ChainId,
-    /// Destination chain ID.
-    pub to_chain_id: ChainId,
-    /// Input amount in base units.
-    pub from_amount: String,
-    /// Output amount in base units.
-    pub to_amount: String,
-    /// Input amount in USD.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from_amount_usd: Option<String>,
-    /// Output amount in USD.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_amount_usd: Option<String>,
-    /// Minimum output amount.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_amount_min: Option<String>,
-    /// Source token.
-    pub from_token: Token,
-    /// Destination token.
-    pub to_token: Token,
-    /// Sender address.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from_address: Option<String>,
-    /// Receiver address.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_address: Option<String>,
+    /// Shared route metadata.
+    #[serde(flatten)]
+    pub base: super::RouteBase,
     /// Steps with execution state.
     pub steps: Vec<LiFiStepExtended>,
-    /// Route tags.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tags: Option<Vec<String>>,
-    /// Insurance information.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub insurance: Option<super::Insurance>,
-    /// Gas cost in USD.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas_cost_usd: Option<String>,
+}
+
+impl std::ops::Deref for RouteExtended {
+    type Target = super::RouteBase;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl std::ops::DerefMut for RouteExtended {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
 }
 
 impl From<super::Route> for RouteExtended {
     fn from(route: super::Route) -> Self {
         Self {
-            id: route.id,
-            from_chain_id: route.from_chain_id,
-            to_chain_id: route.to_chain_id,
-            from_amount: route.from_amount,
-            to_amount: route.to_amount,
-            from_amount_usd: route.from_amount_usd,
-            to_amount_usd: route.to_amount_usd,
-            to_amount_min: route.to_amount_min,
-            from_token: route.from_token,
-            to_token: route.to_token,
-            from_address: route.from_address,
-            to_address: route.to_address,
+            base: route.base,
             steps: route
                 .steps
                 .into_iter()
@@ -275,9 +263,6 @@ impl From<super::Route> for RouteExtended {
                     execution: None,
                 })
                 .collect(),
-            tags: route.tags,
-            insurance: route.insurance,
-            gas_cost_usd: route.gas_cost_usd,
         }
     }
 }

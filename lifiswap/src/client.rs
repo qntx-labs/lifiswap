@@ -21,13 +21,14 @@
 //! # }
 //! ```
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::error::{LiFiError, Result};
 use crate::execution::state::ExecutionState;
+use crate::provider::Provider;
 use crate::types::RouteOptions;
 
 /// SDK version sent in the `x-lifi-sdk` header.
@@ -105,11 +106,21 @@ pub struct LiFiConfig {
 }
 
 /// Shared inner state behind `Arc`.
-#[derive(Debug)]
 pub(crate) struct ClientInner {
     pub(crate) config: LiFiConfig,
     pub(crate) http: reqwest::Client,
     pub(crate) execution_state: ExecutionState,
+    pub(crate) providers: RwLock<Vec<Arc<dyn Provider>>>,
+}
+
+impl std::fmt::Debug for ClientInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let provider_count = self.providers.read().map_or(0, |p| p.len());
+        f.debug_struct("ClientInner")
+            .field("config", &self.config)
+            .field("provider_count", &provider_count)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ClientInner {
@@ -156,6 +167,7 @@ impl LiFiClient {
                 config,
                 http,
                 execution_state: ExecutionState::new(),
+                providers: RwLock::new(Vec::new()),
             }),
         })
     }
@@ -175,6 +187,7 @@ impl LiFiClient {
                 config,
                 http,
                 execution_state: ExecutionState::new(),
+                providers: RwLock::new(Vec::new()),
             }),
         }
     }
@@ -219,5 +232,47 @@ impl LiFiClient {
     #[must_use]
     pub fn execution_state(&self) -> &ExecutionState {
         &self.inner.execution_state
+    }
+
+    /// Register chain providers for multi-chain execution.
+    ///
+    /// Replaces any previously registered providers.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// client.set_providers(vec![Arc::new(evm_provider)]);
+    /// ```
+    pub fn set_providers(&self, providers: Vec<Arc<dyn Provider>>) {
+        *self
+            .inner
+            .providers
+            .write()
+            .expect("providers lock poisoned") = providers;
+    }
+
+    /// Add a single chain provider.
+    pub fn add_provider(&self, provider: impl Provider) {
+        self.inner
+            .providers
+            .write()
+            .expect("providers lock poisoned")
+            .push(Arc::new(provider));
+    }
+
+    /// Find a provider by predicate, returning a cloned `Arc` reference.
+    ///
+    /// The lock is released immediately after the lookup.
+    pub(crate) fn find_provider(
+        &self,
+        predicate: impl Fn(&dyn Provider) -> bool,
+    ) -> Option<Arc<dyn Provider>> {
+        self.inner
+            .providers
+            .read()
+            .expect("providers lock poisoned")
+            .iter()
+            .find(|p| predicate(p.as_ref()))
+            .cloned()
     }
 }

@@ -41,10 +41,10 @@ pub struct RouteOptions {
     pub svm_sponsor: Option<String>,
 }
 
-/// A complete route from source to destination.
+/// Shared route metadata (everything except steps).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Route {
+pub struct RouteBase {
     /// Unique route identifier.
     pub id: String,
     /// Source chain ID.
@@ -74,8 +74,6 @@ pub struct Route {
     /// Receiver address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_address: Option<String>,
-    /// Steps to execute this route.
-    pub steps: Vec<LiFiStep>,
     /// Route tags (e.g. "RECOMMENDED", "CHEAPEST").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
@@ -85,6 +83,32 @@ pub struct Route {
     /// Gas cost in USD.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas_cost_usd: Option<String>,
+}
+
+/// A complete route from source to destination.
+///
+/// Derefs to [`RouteBase`] for direct access to shared metadata fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Route {
+    /// Shared route metadata.
+    #[serde(flatten)]
+    pub base: RouteBase,
+    /// Steps to execute this route.
+    pub steps: Vec<LiFiStep>,
+}
+
+impl std::ops::Deref for Route {
+    type Target = RouteBase;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl std::ops::DerefMut for Route {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
 }
 
 /// Request parameters for getting routes.

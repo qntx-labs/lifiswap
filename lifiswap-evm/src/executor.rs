@@ -87,7 +87,7 @@ impl StepExecutor for EvmStepExecutor {
         step: &mut LiFiStepExtended,
         provider: &dyn Provider,
     ) -> Result<()> {
-        let is_bridge = step.step.action.from_chain_id != step.step.action.to_chain_id;
+        let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
 
         let status_manager = StatusManager::new(
             self.options.route_id.clone(),

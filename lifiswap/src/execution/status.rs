@@ -287,12 +287,7 @@ impl StatusManager {
         }
 
         self.state.with_route(&self.route_id, |data| {
-            if let Some(step_idx) = data
-                .route
-                .steps
-                .iter()
-                .position(|s| s.step.id == step.step.id)
-            {
+            if let Some(step_idx) = data.route.steps.iter().position(|s| s.id == step.id) {
                 data.route.steps[step_idx] = step.clone();
             }
 
@@ -304,7 +299,7 @@ impl StatusManager {
 }
 
 /// Partial update for a step's execution state.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, bon::Builder)]
 pub struct ExecutionUpdate {
     /// New status.
     pub status: Option<ExecutionStatus>,
@@ -325,7 +320,7 @@ pub struct ExecutionUpdate {
 }
 
 /// Optional parameters for updating an action.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, bon::Builder)]
 pub struct ActionUpdateParams {
     /// Chain ID override.
     pub chain_id: Option<u64>,
@@ -346,50 +341,7 @@ pub struct ActionUpdateParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Action, ChainId, StepType, Token};
-
-    fn dummy_token() -> Token {
-        Token {
-            address: "0x0".to_owned(),
-            decimals: 18,
-            symbol: "TST".to_owned(),
-            chain_id: ChainId(1),
-            coin_key: None,
-            name: "Test".to_owned(),
-            logo_uri: None,
-            price_usd: None,
-        }
-    }
-
-    fn dummy_step(id: &str) -> LiFiStepExtended {
-        LiFiStepExtended {
-            step: crate::types::LiFiStep {
-                id: id.to_owned(),
-                step_type: StepType::Swap,
-                tool: None,
-                tool_details: None,
-                action: Action {
-                    from_chain_id: ChainId(1),
-                    to_chain_id: ChainId(1),
-                    from_token: dummy_token(),
-                    to_token: dummy_token(),
-                    from_amount: None,
-                    from_address: None,
-                    to_address: None,
-                    slippage: None,
-                    destination_call_data: None,
-                },
-                estimate: None,
-                included_steps: None,
-                integrator: None,
-                transaction_request: None,
-                execution: None,
-                typed_data: None,
-                insurance: None,
-            },
-            execution: None,
-        }
-    }
+    use crate::execution::test_helpers::dummy_step;
 
     fn make_manager() -> StatusManager {
         let state = ExecutionState::new();

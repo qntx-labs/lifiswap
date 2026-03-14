@@ -114,14 +114,7 @@ impl Provider for EvmProvider {
             };
 
             results.push(TokenAmount {
-                address: token.address.clone(),
-                decimals: token.decimals,
-                symbol: token.symbol.clone(),
-                chain_id: token.chain_id,
-                coin_key: token.coin_key.clone(),
-                name: token.name.clone(),
-                logo_uri: token.logo_uri.clone(),
-                price_usd: token.price_usd.clone(),
+                token: token.clone(),
                 amount,
                 block_number: None,
             });

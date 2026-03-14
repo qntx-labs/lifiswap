@@ -1,7 +1,7 @@
 //! Convert a quote (`LiFiStep`) into a [`Route`] for execution.
 
 use crate::error::{LiFiError, Result};
-use crate::types::{Insurance, LiFiStep, Route};
+use crate::types::{Insurance, LiFiStep, Route, RouteBase};
 
 /// Options for controlling quote-to-route conversion behavior.
 #[derive(Debug, Clone, Copy, Default)]
@@ -43,7 +43,7 @@ fn is_zero_output(
 ///
 /// ```ignore
 /// let route = convert_quote_to_route(&quote_step, None)?;
-/// let extended = execute_route(&client, route, &providers, Default::default()).await?;
+/// let extended = client.execute_route(route, Default::default()).await?;
 /// ```
 pub fn convert_quote_to_route(
     quote: &LiFiStep,
@@ -95,29 +95,31 @@ pub fn convert_quote_to_route(
         .and_then(|c| c.amount_usd.clone());
 
     Ok(Route {
-        id: quote.id.clone(),
-        from_chain_id: quote.action.from_chain_id,
-        to_chain_id: quote.action.to_chain_id,
-        from_token: quote.action.from_token.clone(),
-        to_token: quote.action.to_token.clone(),
-        from_amount: quote.action.from_amount.clone().unwrap_or_default(),
-        to_amount,
-        from_amount_usd: Some(from_amount_usd),
-        to_amount_usd,
-        to_amount_min,
-        from_address: quote.action.from_address.clone(),
-        to_address: quote
-            .action
-            .to_address
-            .clone()
-            .or_else(|| quote.action.from_address.clone()),
+        base: RouteBase {
+            id: quote.id.clone(),
+            from_chain_id: quote.action.from_chain_id,
+            to_chain_id: quote.action.to_chain_id,
+            from_token: quote.action.from_token.clone(),
+            to_token: quote.action.to_token.clone(),
+            from_amount: quote.action.from_amount.clone().unwrap_or_default(),
+            to_amount,
+            from_amount_usd: Some(from_amount_usd),
+            to_amount_usd,
+            to_amount_min,
+            from_address: quote.action.from_address.clone(),
+            to_address: quote
+                .action
+                .to_address
+                .clone()
+                .or_else(|| quote.action.from_address.clone()),
+            tags: None,
+            insurance: Some(Insurance {
+                state: "NOT_INSURABLE".to_owned(),
+                fee_amount_usd: Some("0".to_owned()),
+            }),
+            gas_cost_usd,
+        },
         steps: vec![quote.clone()],
-        tags: None,
-        insurance: Some(Insurance {
-            state: "NOT_INSURABLE".to_owned(),
-            fee_amount_usd: Some("0".to_owned()),
-        }),
-        gas_cost_usd,
     })
 }
 

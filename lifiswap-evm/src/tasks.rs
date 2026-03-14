@@ -49,9 +49,8 @@ impl EvmAllowanceTask {
 #[async_trait]
 impl ExecutionTask for EvmAllowanceTask {
     async fn should_run(&self, ctx: &ExecutionContext<'_>) -> bool {
-        let token_addr = &ctx.step.step.action.from_token.address;
+        let token_addr = &ctx.step.action.from_token.address;
         let has_approval = ctx
-            .step
             .step
             .estimate
             .as_ref()
@@ -61,7 +60,7 @@ impl ExecutionTask for EvmAllowanceTask {
     }
 
     async fn run(&self, ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-        let from_chain_id = ctx.step.step.action.from_chain_id.0;
+        let from_chain_id = ctx.step.action.from_chain_id.0;
 
         // Phase 1: Check current allowance
         ctx.status_manager.initialize_action(
@@ -72,7 +71,6 @@ impl ExecutionTask for EvmAllowanceTask {
         )?;
 
         let owner: Address = ctx
-            .step
             .step
             .action
             .from_address
@@ -86,7 +84,6 @@ impl ExecutionTask for EvmAllowanceTask {
 
         let spender: Address = ctx
             .step
-            .step
             .estimate
             .as_ref()
             .and_then(|e| e.approval_address.as_deref())
@@ -99,7 +96,6 @@ impl ExecutionTask for EvmAllowanceTask {
 
         let token_addr: Address = ctx
             .step
-            .step
             .action
             .from_token
             .address
@@ -107,7 +103,6 @@ impl ExecutionTask for EvmAllowanceTask {
             .map_err(|_| LiFiError::Validation("Invalid token address.".to_owned()))?;
 
         let from_amount: U256 = ctx
-            .step
             .step
             .action
             .from_amount

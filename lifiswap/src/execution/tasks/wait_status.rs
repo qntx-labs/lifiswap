@@ -62,8 +62,8 @@ impl ExecutionTask for WaitForTransactionStatusTask {
                 message: "Transaction hash is undefined.".to_owned(),
             })?;
 
-        let from_chain_id = ctx.step.step.action.from_chain_id.0;
-        let to_chain_id = ctx.step.step.action.to_chain_id.0;
+        let from_chain_id = ctx.step.action.from_chain_id.0;
+        let to_chain_id = ctx.step.action.to_chain_id.0;
 
         let chain_id = if self.action_type == ExecutionActionType::ReceivingChain {
             to_chain_id
