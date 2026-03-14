@@ -238,6 +238,10 @@ impl LiFiClient {
     ///
     /// Replaces any previously registered providers.
     ///
+    /// # Panics
+    ///
+    /// Panics if the internal providers lock is poisoned.
+    ///
     /// # Example
     ///
     /// ```ignore
@@ -252,6 +256,10 @@ impl LiFiClient {
     }
 
     /// Add a single chain provider.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal providers lock is poisoned.
     pub fn add_provider(&self, provider: impl Provider) {
         self.inner
             .providers

@@ -107,7 +107,6 @@ pub const fn http_status_to_error_code(status: u16) -> LiFiErrorCode {
         409 => LiFiErrorCode::SlippageError,
         424 => LiFiErrorCode::ThirdPartyError,
         429 => LiFiErrorCode::RateLimitExceeded,
-        500..=599 => LiFiErrorCode::InternalError,
         _ => LiFiErrorCode::InternalError,
     }
 }

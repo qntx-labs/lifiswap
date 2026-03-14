@@ -46,6 +46,11 @@ pub fn check_step_slippage_threshold(old_step: &LiFiStep, new_step: &LiFiStep) -
 /// if the rate changed beyond the slippage threshold.
 ///
 /// Returns the updated step if accepted, or an error if rejected.
+///
+/// # Errors
+///
+/// Returns [`LiFiError::Transaction`] with code [`LiFiErrorCode::ExchangeRateUpdateCanceled`]
+/// if the exchange rate changed and the user (or hook) declined the update.
 pub async fn step_comparison(
     old_step: &LiFiStep,
     new_step: LiFiStep,
@@ -56,8 +61,7 @@ pub async fn step_comparison(
         return Ok(new_step);
     }
 
-    let mut allow_step_update = false;
-    if allow_user_interaction && let Some(hook) = accept_hook {
+    let allow_step_update = if allow_user_interaction && let Some(hook) = accept_hook {
         let old_to_amount = old_step
             .estimate
             .as_ref()
@@ -74,8 +78,10 @@ pub async fn step_comparison(
             old_to_amount,
             new_to_amount,
         };
-        allow_step_update = hook(params).await;
-    }
+        hook(params).await
+    } else {
+        false
+    };
 
     if !allow_step_update {
         return Err(LiFiError::Transaction {

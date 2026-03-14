@@ -25,21 +25,21 @@ impl LiFiClient {
                 .providers
                 .read()
                 .expect("providers lock poisoned");
-            if let Some(ct) = chain_type {
-                providers
-                    .iter()
-                    .filter(|p| p.chain_type() == ct)
-                    .cloned()
-                    .collect()
-            } else {
-                providers.clone()
-            }
+            chain_type.map_or_else(
+                || providers.clone(),
+                |ct| {
+                    providers
+                        .iter()
+                        .filter(|p| p.chain_type() == ct)
+                        .cloned()
+                        .collect()
+                },
+            )
         };
 
         for provider in &filtered {
-            match provider.resolve_address(name, None).await {
-                Ok(Some(address)) => return Some(address),
-                Ok(None) | Err(_) => continue,
+            if let Ok(Some(address)) = provider.resolve_address(name, None).await {
+                return Some(address);
             }
         }
 

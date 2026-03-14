@@ -18,8 +18,7 @@ pub const fn get_action_message(
         (T::CheckAllowance, S::Pending) => Some("Waiting for token allowance check"),
         (T::CheckAllowance, S::Done) => Some("Token allowance checked"),
 
-        (T::ResetAllowance, S::Started) => Some("Resetting token allowance"),
-        (T::ResetAllowance, S::ResetRequired) => Some("Resetting token allowance"),
+        (T::ResetAllowance, S::Started | S::ResetRequired) => Some("Resetting token allowance"),
         (T::ResetAllowance, S::Pending) => Some("Waiting for token allowance reset"),
         (T::ResetAllowance, S::Done) => Some("Token allowance reset"),
 
@@ -40,8 +39,7 @@ pub const fn get_action_message(
         (T::CrossChain, S::Pending) => Some("Waiting for bridge transaction"),
         (T::CrossChain, S::Done) => Some("Bridge transaction confirmed"),
 
-        (T::ReceivingChain, S::Started) => Some("Waiting for destination chain"),
-        (T::ReceivingChain, S::Pending) => Some("Waiting for destination chain"),
+        (T::ReceivingChain, S::Started | S::Pending) => Some("Waiting for destination chain"),
         (T::ReceivingChain, S::Done) => Some("Bridge completed"),
 
         (T::Permit | T::NativePermit, S::Started) => Some("Preparing transaction"),

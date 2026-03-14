@@ -24,7 +24,7 @@ impl LiFiClient {
         token: &Token,
     ) -> Result<Option<TokenAmount>> {
         let balances = self
-            .get_token_balances(wallet_address, &[token.clone()])
+            .get_token_balances(wallet_address, std::slice::from_ref(token))
             .await?;
         Ok(balances.into_iter().next())
     }

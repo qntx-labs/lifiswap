@@ -48,9 +48,9 @@ impl StatusManager {
     /// If the step has no execution state, creates a new one with `Pending` status.
     /// If the step was previously `Failed`, resets it to `Pending` for retry.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// This method is infallible — it always ensures execution is set.
+    /// Panics if the execution field is `None` after initialization (should never happen).
     pub fn initialize_execution(&self, step: &mut LiFiStepExtended) -> StepExecution {
         if step.execution.is_none() {
             step.execution = Some(StepExecution {
