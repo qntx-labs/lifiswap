@@ -403,6 +403,134 @@ async fn patch_contract_calls_empty_entries_validation() {
 }
 
 #[tokio::test]
+async fn quote_merges_config_route_options_defaults() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/quote"))
+        .and(query_param("slippage", "0.005"))
+        .and(query_param("referrer", "0xDefaultReferrer"))
+        .and(query_param("allowBridges", "stargate,across"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "step-1",
+                "type": "lifi",
+                "tool": "stargate",
+                "action": {
+                    "fromChainId": 1,
+                    "toChainId": 137,
+                    "fromToken": { "address": "0xUSDC", "decimals": 6, "symbol": "USDC", "chainId": 1, "name": "USDC" },
+                    "toToken": { "address": "0xUSDC_POL", "decimals": 6, "symbol": "USDC", "chainId": 137, "name": "USDC" },
+                    "fromAmount": "1000000",
+                    "fromAddress": "0xSender",
+                    "toAddress": "0xSender",
+                    "slippage": 0.005
+                },
+                "estimate": {
+                    "fromAmount": "1000000",
+                    "toAmount": "990000",
+                    "approvalAddress": "0xApproval"
+                }
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let client = LiFiClient::new(
+        LiFiConfig::builder()
+            .integrator("test")
+            .api_url(server.uri())
+            .retry(RetryConfig::builder().max_retries(0).build())
+            .route_options(
+                lifiswap::types::RouteOptions::builder()
+                    .slippage(0.005)
+                    .referrer("0xDefaultReferrer")
+                    .bridges(lifiswap::types::ToolFilter {
+                        allow: Some(vec!["stargate".into(), "across".into()]),
+                        deny: None,
+                        prefer: None,
+                    })
+                    .build(),
+            )
+            .build(),
+    )
+    .expect("client");
+
+    let req = lifiswap::types::QuoteRequest::builder()
+        .from_chain("1")
+        .from_token("0xUSDC")
+        .from_address("0xSender")
+        .from_amount("1000000")
+        .to_chain("137")
+        .to_token("0xUSDC_POL")
+        .build();
+
+    let _step = client.get_quote(&req).await.expect("get_quote failed");
+}
+
+#[tokio::test]
+async fn quote_request_overrides_config_defaults() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/quote"))
+        .and(query_param("slippage", "0.01"))
+        .and(query_param("referrer", "0xOverrideReferrer"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "step-1",
+                "type": "lifi",
+                "tool": "stargate",
+                "action": {
+                    "fromChainId": 1,
+                    "toChainId": 137,
+                    "fromToken": { "address": "0xUSDC", "decimals": 6, "symbol": "USDC", "chainId": 1, "name": "USDC" },
+                    "toToken": { "address": "0xUSDC_POL", "decimals": 6, "symbol": "USDC", "chainId": 137, "name": "USDC" },
+                    "fromAmount": "1000000",
+                    "fromAddress": "0xSender",
+                    "toAddress": "0xSender",
+                    "slippage": 0.01
+                },
+                "estimate": {
+                    "fromAmount": "1000000",
+                    "toAmount": "980000",
+                    "approvalAddress": "0xApproval"
+                }
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let client = LiFiClient::new(
+        LiFiConfig::builder()
+            .integrator("test")
+            .api_url(server.uri())
+            .retry(RetryConfig::builder().max_retries(0).build())
+            .route_options(
+                lifiswap::types::RouteOptions::builder()
+                    .slippage(0.005)
+                    .referrer("0xDefaultReferrer")
+                    .build(),
+            )
+            .build(),
+    )
+    .expect("client");
+
+    let req = lifiswap::types::QuoteRequest::builder()
+        .from_chain("1")
+        .from_token("0xUSDC")
+        .from_address("0xSender")
+        .from_amount("1000000")
+        .to_chain("137")
+        .to_token("0xUSDC_POL")
+        .slippage(0.01)
+        .referrer("0xOverrideReferrer")
+        .build();
+
+    let _step = client.get_quote(&req).await.expect("get_quote failed");
+}
+
+#[tokio::test]
 async fn client_is_clone_and_send() {
     let server = MockServer::start().await;
 

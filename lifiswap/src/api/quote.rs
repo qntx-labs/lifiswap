@@ -61,10 +61,7 @@ impl LiFiClient {
             query.push(("toAddress".into(), addr.clone()));
         }
 
-        Self::push_route_option_params(
-            &mut query,
-            QuoteRouteFields::resolve(params, defaults),
-        );
+        Self::push_route_option_params(&mut query, QuoteRouteFields::resolve(params, defaults));
 
         let base = url::Url::parse(&format!("{}/quote", self.api_url()))?;
         let url = url::Url::parse_with_params(base.as_str(), &query)?;
@@ -106,7 +103,13 @@ impl LiFiClient {
 
         Self::push_route_option_params(
             &mut query,
-            QuoteRouteFields::resolve_basic(params.order, params.slippage, params.fee, params.referrer.as_deref(), defaults),
+            QuoteRouteFields::resolve_basic(
+                params.order,
+                params.slippage,
+                params.fee,
+                params.referrer.as_deref(),
+                defaults,
+            ),
         );
 
         let base = url::Url::parse(&format!("{}/quote/toAmount", self.api_url()))?;
@@ -139,10 +142,7 @@ impl LiFiClient {
     }
 
     /// Push merged route option query params onto `query`.
-    fn push_route_option_params(
-        query: &mut Vec<(String, String)>,
-        fields: QuoteRouteFields,
-    ) {
+    fn push_route_option_params(query: &mut Vec<(String, String)>, fields: QuoteRouteFields) {
         if let Some(o) = fields.order
             && let Ok(v) = serde_json::to_value(o)
             && let Some(s) = v.as_str()
@@ -203,10 +203,7 @@ impl QuoteRouteFields {
             order: params.order.or(d.order),
             slippage: params.slippage.or(d.slippage),
             fee: params.fee.or(d.fee),
-            referrer: params
-                .referrer
-                .clone()
-                .or(d.referrer),
+            referrer: params.referrer.clone().or(d.referrer),
             allow_bridges: params
                 .allow_bridges
                 .clone()
@@ -247,9 +244,7 @@ impl QuoteRouteFields {
             order: order.or(d.order),
             slippage: slippage.or(d.slippage),
             fee: fee.or(d.fee),
-            referrer: referrer
-                .map(String::from)
-                .or(d.referrer),
+            referrer: referrer.map(String::from).or(d.referrer),
             ..Self::default()
         }
     }
