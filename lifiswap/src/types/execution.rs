@@ -1,0 +1,323 @@
+//! Execution engine types for route execution tracking.
+
+use serde::{Deserialize, Serialize};
+
+use super::{ChainId, FeeCost, GasCost, Token};
+
+/// Overall execution status of a step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ExecutionStatus {
+    /// Waiting for processing.
+    Pending,
+    /// User action needed (e.g. sign transaction).
+    ActionRequired,
+    /// Execution failed.
+    Failed,
+    /// Execution completed successfully.
+    Done,
+}
+
+/// Status of an individual execution action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ExecutionActionStatus {
+    /// Action has started.
+    Started,
+    /// User action required.
+    ActionRequired,
+    /// Message signing required.
+    MessageRequired,
+    /// Reset required (e.g. allowance reset).
+    ResetRequired,
+    /// Waiting for confirmation.
+    Pending,
+    /// Action failed.
+    Failed,
+    /// Action completed.
+    Done,
+    /// Action was cancelled.
+    Cancelled,
+}
+
+/// Type of execution action within a step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ExecutionActionType {
+    /// EIP-2612 permit signing.
+    Permit,
+    /// Check token allowance.
+    CheckAllowance,
+    /// Native permit (e.g. DAI-style).
+    NativePermit,
+    /// Reset token allowance to zero.
+    ResetAllowance,
+    /// Set token allowance.
+    SetAllowance,
+    /// On-chain swap.
+    Swap,
+    /// Cross-chain bridge transaction.
+    CrossChain,
+    /// Waiting for destination chain confirmation.
+    ReceivingChain,
+}
+
+/// Transaction method used for execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransactionMethodType {
+    /// Standard on-chain transaction.
+    Standard,
+    /// Relayed (gasless) transaction.
+    Relayed,
+    /// Batched transaction (EIP-5792).
+    Batched,
+}
+
+/// Error details within an execution action.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionError {
+    /// Error code (numeric or string).
+    pub code: String,
+    /// Human-readable error message.
+    pub message: String,
+    /// Optional HTML-formatted error message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html_message: Option<String>,
+}
+
+/// A single action within a step's execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionAction {
+    /// Action type.
+    #[serde(rename = "type")]
+    pub action_type: ExecutionActionType,
+    /// Current status.
+    pub status: ExecutionActionStatus,
+    /// Human-readable status message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// Chain ID where this action occurs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_id: Option<u64>,
+    /// Transaction hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_hash: Option<String>,
+    /// Transaction explorer link.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_link: Option<String>,
+    /// Task ID (for relay transactions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    /// Transaction method type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_type: Option<TransactionMethodType>,
+    /// Error details.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<ExecutionError>,
+    /// Substatus code from the API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub substatus: Option<String>,
+    /// Substatus message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub substatus_message: Option<String>,
+}
+
+/// Execution state of a step, tracking all actions and progress.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepExecution {
+    /// Unix timestamp (ms) when execution started.
+    pub started_at: u64,
+    /// Unix timestamp (ms) when the transaction was signed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_at: Option<u64>,
+    /// Current execution status.
+    pub status: ExecutionStatus,
+    /// Ordered list of actions performed.
+    pub actions: Vec<ExecutionAction>,
+    /// The last action type that was processed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_action_type: Option<ExecutionActionType>,
+    /// Actual source amount.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_amount: Option<String>,
+    /// Actual destination amount.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_amount: Option<String>,
+    /// Destination token (may differ from estimate after execution).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_token: Option<Token>,
+    /// Fee costs incurred.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fee_costs: Option<Vec<FeeCost>>,
+    /// Gas costs incurred.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_costs: Option<Vec<GasCost>>,
+    /// Internal (LiFi explorer) transaction link.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub internal_tx_link: Option<String>,
+    /// External (bridge explorer) transaction link.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_tx_link: Option<String>,
+    /// Execution-level error (outside of actions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<ExecutionError>,
+}
+
+/// A `LiFiStep` extended with mutable execution state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiFiStepExtended {
+    /// The underlying step data.
+    #[serde(flatten)]
+    pub step: super::LiFiStep,
+    /// Mutable execution state (populated during execution).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<StepExecution>,
+}
+
+/// A route extended with execution-aware steps.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteExtended {
+    /// Unique route identifier.
+    pub id: String,
+    /// Source chain ID.
+    pub from_chain_id: ChainId,
+    /// Destination chain ID.
+    pub to_chain_id: ChainId,
+    /// Input amount in base units.
+    pub from_amount: String,
+    /// Output amount in base units.
+    pub to_amount: String,
+    /// Input amount in USD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_amount_usd: Option<String>,
+    /// Output amount in USD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_amount_usd: Option<String>,
+    /// Minimum output amount.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_amount_min: Option<String>,
+    /// Source token.
+    pub from_token: Token,
+    /// Destination token.
+    pub to_token: Token,
+    /// Sender address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_address: Option<String>,
+    /// Receiver address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_address: Option<String>,
+    /// Steps with execution state.
+    pub steps: Vec<LiFiStepExtended>,
+    /// Route tags.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    /// Insurance information.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insurance: Option<super::Insurance>,
+    /// Gas cost in USD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_cost_usd: Option<String>,
+}
+
+impl From<super::Route> for RouteExtended {
+    fn from(route: super::Route) -> Self {
+        Self {
+            id: route.id,
+            from_chain_id: route.from_chain_id,
+            to_chain_id: route.to_chain_id,
+            from_amount: route.from_amount,
+            to_amount: route.to_amount,
+            from_amount_usd: route.from_amount_usd,
+            to_amount_usd: route.to_amount_usd,
+            to_amount_min: route.to_amount_min,
+            from_token: route.from_token,
+            to_token: route.to_token,
+            from_address: route.from_address,
+            to_address: route.to_address,
+            steps: route
+                .steps
+                .into_iter()
+                .map(|s| LiFiStepExtended {
+                    step: s,
+                    execution: None,
+                })
+                .collect(),
+            tags: route.tags,
+            insurance: route.insurance,
+            gas_cost_usd: route.gas_cost_usd,
+        }
+    }
+}
+
+/// Interaction settings controlling user interaction during execution.
+#[derive(Debug, Clone, Copy)]
+pub struct InteractionSettings {
+    /// Allow user interaction (e.g. wallet popups).
+    pub allow_interaction: bool,
+    /// Allow status updates to propagate.
+    pub allow_updates: bool,
+    /// Allow transaction execution.
+    pub allow_execution: bool,
+}
+
+impl Default for InteractionSettings {
+    fn default() -> Self {
+        Self {
+            allow_interaction: true,
+            allow_updates: true,
+            allow_execution: true,
+        }
+    }
+}
+
+/// Options for configuring route execution behavior.
+pub struct ExecutionOptions {
+    /// Hook called whenever the route is updated during execution.
+    pub update_route_hook: Option<Box<dyn Fn(&RouteExtended) + Send + Sync>>,
+    /// Whether to execute in the background (no user interaction).
+    pub execute_in_background: bool,
+}
+
+impl std::fmt::Debug for ExecutionOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecutionOptions")
+            .field(
+                "update_route_hook",
+                &self.update_route_hook.as_ref().map(|_| ".."),
+            )
+            .field("execute_in_background", &self.execute_in_background)
+            .finish()
+    }
+}
+
+impl Default for ExecutionOptions {
+    fn default() -> Self {
+        Self {
+            update_route_hook: None,
+            execute_in_background: false,
+        }
+    }
+}
+
+/// Options passed when creating a step executor.
+#[derive(Debug, Clone)]
+pub struct StepExecutorOptions {
+    /// Route ID this executor belongs to.
+    pub route_id: String,
+    /// Whether to execute in the background.
+    pub execute_in_background: bool,
+}
+
+/// Result status of a task in the execution pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskStatus {
+    /// Task completed, proceed to next.
+    Completed,
+    /// Task paused, waiting for user interaction.
+    Paused,
+}

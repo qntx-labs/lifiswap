@@ -6,6 +6,7 @@
 mod chain;
 mod common;
 mod connection;
+pub mod execution;
 mod gas;
 mod patcher;
 mod quote;
@@ -20,6 +21,7 @@ mod wallet;
 pub use chain::*;
 pub use common::*;
 pub use connection::*;
+pub use execution::*;
 pub use gas::*;
 pub use patcher::*;
 pub use quote::*;
