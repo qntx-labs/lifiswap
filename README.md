@@ -115,6 +115,8 @@ let client = LiFiClient::with_http_client(
 | `POST /advanced/relay` | `relay_transaction()` |
 | `GET /relayer/status` | `get_relayed_transaction_status()` |
 | `GET /analytics/transfers` | `get_transaction_history()` |
+| `GET /wallets/{addr}/balances` | `get_wallet_balances()` |
+| `POST /patcher` | `patch_contract_calls()` |
 
 ## License
 
