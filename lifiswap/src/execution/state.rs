@@ -1,14 +1,16 @@
-//! Global execution state for tracking active route executions.
+//! Execution state for tracking active route executions.
+//!
+//! [`ExecutionState`] is cheaply cloneable (`Arc`-backed) and can be
+//! shared across tasks without lifetime concerns. It lives inside
+//! [`LiFiClient`](crate::LiFiClient) and is automatically available
+//! during route execution.
 
-use std::sync::LazyLock;
+use std::sync::Arc;
 
 use dashmap::DashMap;
 
 use crate::provider::StepExecutor;
 use crate::types::{ExecutionOptions, RouteExtended};
-
-/// Global execution state singleton.
-pub static EXECUTION_STATE: LazyLock<ExecutionState> = LazyLock::new(ExecutionState::new);
 
 /// Data associated with an active route execution.
 pub struct ExecutionData {
@@ -32,10 +34,11 @@ impl std::fmt::Debug for ExecutionData {
 
 /// Thread-safe storage for active route executions.
 ///
-/// Uses [`DashMap`] for concurrent access from multiple tasks.
-#[derive(Debug)]
+/// Cheaply cloneable — all clones share the same underlying map.
+/// Uses [`DashMap`] for lock-free concurrent access.
+#[derive(Debug, Clone)]
 pub struct ExecutionState {
-    state: DashMap<String, ExecutionData>,
+    state: Arc<DashMap<String, ExecutionData>>,
 }
 
 impl ExecutionState {
@@ -43,7 +46,7 @@ impl ExecutionState {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            state: DashMap::new(),
+            state: Arc::new(DashMap::new()),
         }
     }
 

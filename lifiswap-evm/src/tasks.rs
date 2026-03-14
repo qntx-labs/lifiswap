@@ -19,18 +19,23 @@ sol! {
     }
 }
 
-/// Check ERC-20 token allowance for the approval address.
+/// Check and set ERC-20 token allowance for the approval address.
 ///
-/// Skips if the token is a native token (ETH) or if no approval address is set.
+/// Checks the current allowance on-chain. If sufficient, skips approval.
+/// If insufficient, sends an `approve(MAX)` transaction.
+///
+/// Skips entirely if the token is native (ETH) or no approval address is set.
 #[derive(Debug, Clone)]
-pub struct EvmCheckAllowanceTask {
+pub struct EvmAllowanceTask {
+    wallet: EthereumWallet,
     rpc_url: String,
 }
 
-impl EvmCheckAllowanceTask {
-    /// Create a new allowance check task.
-    pub fn new(rpc_url: impl Into<String>) -> Self {
+impl EvmAllowanceTask {
+    /// Create a new allowance task.
+    pub fn new(wallet: EthereumWallet, rpc_url: impl Into<String>) -> Self {
         Self {
+            wallet,
             rpc_url: rpc_url.into(),
         }
     }
@@ -42,7 +47,7 @@ impl EvmCheckAllowanceTask {
 }
 
 #[async_trait]
-impl ExecutionTask for EvmCheckAllowanceTask {
+impl ExecutionTask for EvmAllowanceTask {
     async fn should_run(&self, ctx: &ExecutionContext<'_>) -> bool {
         let token_addr = &ctx.step.step.action.from_token.address;
         let has_approval = ctx
@@ -58,6 +63,7 @@ impl ExecutionTask for EvmCheckAllowanceTask {
     async fn run(&self, ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
         let from_chain_id = ctx.step.step.action.from_chain_id.0;
 
+        // Phase 1: Check current allowance
         ctx.status_manager.initialize_action(
             ctx.step,
             ExecutionActionType::CheckAllowance,
@@ -114,9 +120,9 @@ impl ExecutionTask for EvmCheckAllowanceTask {
             .rpc_url
             .parse()
             .map_err(|e| LiFiError::Config(format!("Invalid RPC URL: {e}")))?;
-        let provider = ProviderBuilder::new().connect_http(rpc_url);
+        let read_provider = ProviderBuilder::new().connect_http(rpc_url.clone());
 
-        let contract = IERC20::new(token_addr, &provider);
+        let contract = IERC20::new(token_addr, &read_provider);
         let allowance: U256 = contract
             .allowance(owner, spender)
             .call()
@@ -126,8 +132,6 @@ impl ExecutionTask for EvmCheckAllowanceTask {
                 message: format!("Failed to check allowance: {e}"),
             })?;
 
-        let sufficient = allowance >= from_amount;
-
         ctx.status_manager.update_action(
             ctx.step,
             ExecutionActionType::CheckAllowance,
@@ -135,52 +139,14 @@ impl ExecutionTask for EvmCheckAllowanceTask {
             None,
         )?;
 
-        if sufficient {
-            tracing::debug!(allowance = %allowance, required = %from_amount, "allowance sufficient");
-        } else {
-            tracing::debug!(allowance = %allowance, required = %from_amount, "allowance insufficient, approval needed");
+        if allowance >= from_amount {
+            tracing::debug!(allowance = %allowance, required = %from_amount, "allowance sufficient, skipping approval");
+            return Ok(TaskStatus::Completed);
         }
 
-        Ok(TaskStatus::Completed)
-    }
-}
+        tracing::debug!(allowance = %allowance, required = %from_amount, "allowance insufficient, approving");
 
-/// Approve ERC-20 token spending for the `LiFi` contract.
-///
-/// Sends an `approve` transaction with `type(uint256).max` as the amount.
-#[derive(Debug, Clone)]
-pub struct EvmSetAllowanceTask {
-    wallet: EthereumWallet,
-    rpc_url: String,
-}
-
-impl EvmSetAllowanceTask {
-    /// Create a new set allowance task.
-    pub fn new(wallet: EthereumWallet, rpc_url: impl Into<String>) -> Self {
-        Self {
-            wallet,
-            rpc_url: rpc_url.into(),
-        }
-    }
-}
-
-#[async_trait]
-impl ExecutionTask for EvmSetAllowanceTask {
-    async fn should_run(&self, ctx: &ExecutionContext<'_>) -> bool {
-        let token_addr = &ctx.step.step.action.from_token.address;
-        let has_approval = ctx
-            .step
-            .step
-            .estimate
-            .as_ref()
-            .and_then(|e| e.approval_address.as_ref())
-            .is_some();
-        !EvmCheckAllowanceTask::is_native_token(token_addr) && has_approval
-    }
-
-    async fn run(&self, ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-        let from_chain_id = ctx.step.step.action.from_chain_id.0;
-
+        // Phase 2: Approve if insufficient
         ctx.status_manager.initialize_action(
             ctx.step,
             ExecutionActionType::SetAllowance,
@@ -192,34 +158,11 @@ impl ExecutionTask for EvmSetAllowanceTask {
             return Ok(TaskStatus::Paused);
         }
 
-        let spender: Address = ctx
-            .step
-            .step
-            .estimate
-            .as_ref()
-            .and_then(|e| e.approval_address.as_deref())
-            .expect("approval_address checked in should_run")
-            .parse()
-            .map_err(|_| LiFiError::Validation("Invalid approval_address.".to_owned()))?;
-
-        let token_addr: Address = ctx
-            .step
-            .step
-            .action
-            .from_token
-            .address
-            .parse()
-            .map_err(|_| LiFiError::Validation("Invalid token address.".to_owned()))?;
-
-        let rpc_url: url::Url = self
-            .rpc_url
-            .parse()
-            .map_err(|e| LiFiError::Config(format!("Invalid RPC URL: {e}")))?;
-        let provider = ProviderBuilder::new()
+        let write_provider = ProviderBuilder::new()
             .wallet(self.wallet.clone())
             .connect_http(rpc_url);
 
-        let contract = IERC20::new(token_addr, &provider);
+        let contract = IERC20::new(token_addr, &write_provider);
         let tx_hash = contract
             .approve(spender, U256::MAX)
             .send()

@@ -12,18 +12,17 @@ use lifiswap::execution::tasks::{
 use lifiswap::provider::StepExecutor;
 use lifiswap::types::{InteractionSettings, LiFiStepExtended, StepExecutorOptions};
 
-use crate::tasks::{EvmCheckAllowanceTask, EvmSetAllowanceTask, EvmSignAndExecuteTask};
+use crate::tasks::{EvmAllowanceTask, EvmSignAndExecuteTask};
 
 /// EVM-specific step executor.
 ///
 /// Builds a [`TaskPipeline`] with the following sequence:
 ///
 /// 1. `CheckBalanceTask` — verify wallet has sufficient funds
-/// 2. `EvmCheckAllowanceTask` — check ERC-20 token allowance
-/// 3. `EvmSetAllowanceTask` — approve token spending if needed
-/// 4. `PrepareTransactionTask` — fetch transaction data from API
-/// 5. `EvmSignAndExecuteTask` — sign and broadcast the transaction
-/// 6. `WaitForTransactionStatusTask` — poll status until terminal
+/// 2. `EvmAllowanceTask` — check allowance and approve if needed
+/// 3. `PrepareTransactionTask` — fetch transaction data from API
+/// 4. `EvmSignAndExecuteTask` — sign and broadcast the transaction
+/// 5. `WaitForTransactionStatusTask` — poll status until terminal
 pub struct EvmStepExecutor {
     wallet: EthereumWallet,
     rpc_url: String,
@@ -59,8 +58,7 @@ impl EvmStepExecutor {
     fn build_pipeline(&self, is_bridge: bool) -> TaskPipeline {
         let mut tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = vec![
             Box::new(CheckBalanceTask),
-            Box::new(EvmCheckAllowanceTask::new(self.rpc_url.clone())),
-            Box::new(EvmSetAllowanceTask::new(
+            Box::new(EvmAllowanceTask::new(
                 self.wallet.clone(),
                 self.rpc_url.clone(),
             )),
@@ -90,17 +88,18 @@ impl StepExecutor for EvmStepExecutor {
     ) -> Result<()> {
         let is_bridge = step.step.action.from_chain_id != step.step.action.to_chain_id;
 
-        let status_manager = StatusManager::new(self.options.route_id.clone());
+        let status_manager = StatusManager::new(
+            self.options.route_id.clone(),
+            client.execution_state().clone(),
+        );
         status_manager.initialize_execution(step);
 
-        let default_opts = lifiswap::types::ExecutionOptions::default();
         let pipeline = self.build_pipeline(is_bridge);
 
         let mut ctx = ExecutionContext {
             client,
             step,
             status_manager: &status_manager,
-            execution_options: &default_opts,
             is_bridge_execution: is_bridge,
             allow_user_interaction: self.interaction.allow_interaction,
         };

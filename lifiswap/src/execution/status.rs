@@ -2,7 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::state::EXECUTION_STATE;
+use super::state::ExecutionState;
 use crate::error::{LiFiError, Result};
 use crate::types::{
     ExecutionAction, ExecutionActionStatus, ExecutionActionType, ExecutionError, ExecutionStatus,
@@ -22,20 +22,22 @@ fn execution_not_initialized() -> LiFiError {
 /// Manages execution status updates for a single route.
 ///
 /// Tracks actions within each step and propagates updates to the
-/// global [`ExecutionState`](super::state::ExecutionState) and
+/// client's [`ExecutionState`](super::state::ExecutionState) and
 /// optional update hooks.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StatusManager {
     route_id: String,
+    state: ExecutionState,
     should_update: bool,
 }
 
 impl StatusManager {
     /// Create a new status manager for the given route.
     #[must_use]
-    pub const fn new(route_id: String) -> Self {
+    pub const fn new(route_id: String, state: ExecutionState) -> Self {
         Self {
             route_id,
+            state,
             should_update: true,
         }
     }
@@ -196,14 +198,9 @@ impl StatusManager {
     ) -> Result<ExecutionAction> {
         if self.find_action(step, action_type).is_some() {
             self.update_action(step, action_type, status, None)?;
-            return self
-                .find_action(step, action_type)
-                .cloned()
-                .ok_or_else(|| {
-                    LiFiError::Execution(format!(
-                        "Action {action_type:?} not found after update."
-                    ))
-                });
+            return self.find_action(step, action_type).cloned().ok_or_else(|| {
+                LiFiError::Execution(format!("Action {action_type:?} not found after update."))
+            });
         }
         self.create_action(step, action_type, chain_id, status)
     }
@@ -298,7 +295,7 @@ impl StatusManager {
             return;
         }
 
-        EXECUTION_STATE.with_route(&self.route_id, |data| {
+        self.state.with_route(&self.route_id, |data| {
             if let Some(step_idx) = data
                 .route
                 .steps

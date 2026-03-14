@@ -27,6 +27,7 @@ use std::time::Duration;
 use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::error::{LiFiError, Result};
+use crate::execution::state::ExecutionState;
 use crate::types::RouteOptions;
 
 /// SDK version sent in the `x-lifi-sdk` header.
@@ -108,6 +109,7 @@ pub struct LiFiConfig {
 pub(crate) struct ClientInner {
     pub(crate) config: LiFiConfig,
     pub(crate) http: reqwest::Client,
+    pub(crate) execution_state: ExecutionState,
 }
 
 impl ClientInner {
@@ -150,7 +152,11 @@ impl LiFiClient {
             .map_err(LiFiError::Network)?;
 
         Ok(Self {
-            inner: Arc::new(ClientInner { config, http }),
+            inner: Arc::new(ClientInner {
+                config,
+                http,
+                execution_state: ExecutionState::new(),
+            }),
         })
     }
 
@@ -165,7 +171,11 @@ impl LiFiClient {
     #[must_use]
     pub fn with_http_client(config: LiFiConfig, http: reqwest::Client) -> Self {
         Self {
-            inner: Arc::new(ClientInner { config, http }),
+            inner: Arc::new(ClientInner {
+                config,
+                http,
+                execution_state: ExecutionState::new(),
+            }),
         }
     }
 
@@ -199,5 +209,15 @@ impl LiFiClient {
     #[must_use]
     pub fn api_url(&self) -> &str {
         &self.inner.config.api_url
+    }
+
+    /// Returns the execution state manager.
+    ///
+    /// Used by chain provider crates (e.g. `lifiswap-evm`) to create
+    /// [`StatusManager`](crate::execution::StatusManager) instances
+    /// that share the client's execution state.
+    #[must_use]
+    pub fn execution_state(&self) -> &ExecutionState {
+        &self.inner.execution_state
     }
 }

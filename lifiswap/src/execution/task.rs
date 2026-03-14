@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use super::status::StatusManager;
 use crate::LiFiClient;
 use crate::error::Result;
-use crate::types::{ExecutionOptions, LiFiStepExtended, TaskStatus};
+use crate::types::{LiFiStepExtended, TaskStatus};
 
 /// Context passed to each task in the execution pipeline.
 pub struct ExecutionContext<'a> {
@@ -15,8 +15,6 @@ pub struct ExecutionContext<'a> {
     pub step: &'a mut LiFiStepExtended,
     /// Status manager for tracking actions.
     pub status_manager: &'a StatusManager,
-    /// Execution options (hooks, background mode).
-    pub execution_options: &'a ExecutionOptions,
     /// Whether this is a cross-chain bridge execution.
     pub is_bridge_execution: bool,
     /// Whether user interaction is allowed.
