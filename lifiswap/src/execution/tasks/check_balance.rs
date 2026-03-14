@@ -32,16 +32,16 @@ impl ExecutionTask for CheckBalanceTask {
             ExecutionActionStatus::Started,
         );
 
-        let wallet_address = ctx
-            .step
-            .step
-            .action
-            .from_address
-            .as_ref()
-            .ok_or_else(|| LiFiError::Transaction {
-                code: LiFiErrorCode::InternalError,
-                message: "The wallet address is undefined.".to_owned(),
-            })?;
+        let wallet_address =
+            ctx.step
+                .step
+                .action
+                .from_address
+                .as_ref()
+                .ok_or_else(|| LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: "The wallet address is undefined.".to_owned(),
+                })?;
 
         tracing::debug!(wallet = %wallet_address, "balance check passed");
 

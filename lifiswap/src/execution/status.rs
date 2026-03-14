@@ -2,12 +2,11 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::state::EXECUTION_STATE;
 use crate::types::{
     ExecutionAction, ExecutionActionStatus, ExecutionActionType, ExecutionError, ExecutionStatus,
     LiFiStepExtended, StepExecution,
 };
-
-use super::state::EXECUTION_STATE;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -264,7 +263,11 @@ impl StatusManager {
         }
 
         EXECUTION_STATE.with_route(&self.route_id, |data| {
-            if let Some(step_idx) = data.route.steps.iter().position(|s| s.step.id == step.step.id)
+            if let Some(step_idx) = data
+                .route
+                .steps
+                .iter()
+                .position(|s| s.step.id == step.step.id)
             {
                 data.route.steps[step_idx] = step.clone();
             }

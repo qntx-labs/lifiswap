@@ -2,11 +2,10 @@
 
 use async_trait::async_trait;
 
+use super::status::StatusManager;
+use crate::LiFiClient;
 use crate::error::Result;
 use crate::types::{ExecutionOptions, LiFiStepExtended, TaskStatus};
-use crate::LiFiClient;
-
-use super::status::StatusManager;
 
 /// Context passed to each task in the execution pipeline.
 pub struct ExecutionContext<'a> {

@@ -1,14 +1,13 @@
 //! Core execution engine — `execute_route`, `resume_route`, `stop_route_execution`.
 
+use super::state::EXECUTION_STATE;
+use crate::LiFiClient;
 use crate::error::{LiFiError, LiFiErrorCode, Result};
 use crate::provider::Provider;
 use crate::types::{
-    ExecutionOptions, ExecutionStatus, InteractionSettings, RouteExtended, Route,
+    ExecutionOptions, ExecutionStatus, InteractionSettings, Route, RouteExtended,
     StepExecutorOptions,
 };
-use crate::LiFiClient;
-
-use super::state::EXECUTION_STATE;
 
 /// Execute a route from start to finish.
 ///

@@ -25,12 +25,13 @@ impl ExecutionTask for PrepareTransactionTask {
             ExecutionActionType::Swap
         };
 
-        let _action = ctx.status_manager.find_action(ctx.step, action_type).ok_or(
-            LiFiError::Transaction {
+        let _action = ctx
+            .status_manager
+            .find_action(ctx.step, action_type)
+            .ok_or(LiFiError::Transaction {
                 code: LiFiErrorCode::InternalError,
                 message: "Unable to prepare transaction. Action not found.".to_owned(),
-            },
-        )?;
+            })?;
 
         if ctx.step.step.transaction_request.is_none() {
             let step_for_api = ctx.step.step.clone();
@@ -38,7 +39,14 @@ impl ExecutionTask for PrepareTransactionTask {
             ctx.step.step.transaction_request = updated_step.transaction_request;
         }
 
-        if ctx.step.step.transaction_request.as_ref().and_then(|r| r.data.as_ref()).is_none() {
+        if ctx
+            .step
+            .step
+            .transaction_request
+            .as_ref()
+            .and_then(|r| r.data.as_ref())
+            .is_none()
+        {
             return Err(LiFiError::Transaction {
                 code: LiFiErrorCode::InternalError,
                 message: "Unable to prepare transaction. Transaction request data is not found."
@@ -46,8 +54,12 @@ impl ExecutionTask for PrepareTransactionTask {
             });
         }
 
-        ctx.status_manager
-            .update_action(ctx.step, action_type, ExecutionActionStatus::ActionRequired, None);
+        ctx.status_manager.update_action(
+            ctx.step,
+            action_type,
+            ExecutionActionStatus::ActionRequired,
+            None,
+        );
 
         if !ctx.allow_user_interaction {
             return Ok(TaskStatus::Paused);

@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 
 use crate::error::{LiFiError, LiFiErrorCode, Result};
+use crate::execution::status::ExecutionUpdate;
 use crate::execution::task::{ExecutionContext, ExecutionTask};
 use crate::types::{ExecutionActionStatus, ExecutionActionType, ExecutionStatus, TaskStatus};
-use crate::execution::status::ExecutionUpdate;
 
 /// Polls the LI.FI status API until the transaction reaches a terminal state.
 ///
@@ -132,7 +132,10 @@ async fn poll_transaction_status(
                     code: LiFiErrorCode::TransactionFailed,
                     message: format!(
                         "Transaction failed: {}",
-                        status.substatus_message.as_deref().unwrap_or("unknown error")
+                        status
+                            .substatus_message
+                            .as_deref()
+                            .unwrap_or("unknown error")
                     ),
                 });
             }

@@ -1,7 +1,8 @@
 //! Global execution state for tracking active route executions.
 
-use dashmap::DashMap;
 use std::sync::LazyLock;
+
+use dashmap::DashMap;
 
 use crate::provider::StepExecutor;
 use crate::types::{ExecutionOptions, RouteExtended};
@@ -48,16 +49,15 @@ impl ExecutionState {
 
     /// Get a reference to execution data for a route.
     #[must_use]
-    pub fn get(&self, route_id: &str) -> Option<dashmap::mapref::one::Ref<'_, String, ExecutionData>> {
+    pub fn get(
+        &self,
+        route_id: &str,
+    ) -> Option<dashmap::mapref::one::Ref<'_, String, ExecutionData>> {
         self.state.get(route_id)
     }
 
     /// Create or update execution data for a route.
-    pub fn create(
-        &self,
-        route: RouteExtended,
-        execution_options: ExecutionOptions,
-    ) -> String {
+    pub fn create(&self, route: RouteExtended, execution_options: ExecutionOptions) -> String {
         let route_id = route.id.clone();
         let existing_executors = self
             .state

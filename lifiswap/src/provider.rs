@@ -6,11 +6,11 @@
 
 use async_trait::async_trait;
 
+use crate::LiFiClient;
 use crate::error::Result;
 use crate::types::{
     ChainType, InteractionSettings, LiFiStepExtended, StepExecutorOptions, Token, TokenAmount,
 };
-use crate::LiFiClient;
 
 /// A chain-specific provider that handles on-chain interactions.
 ///
@@ -39,22 +39,15 @@ pub trait Provider: Send + Sync + 'static {
     /// # Errors
     ///
     /// Returns an error if the resolution service is unreachable.
-    async fn resolve_address(
-        &self,
-        name: &str,
-        chain_id: Option<u64>,
-    ) -> Result<Option<String>>;
+    async fn resolve_address(&self, name: &str, chain_id: Option<u64>) -> Result<Option<String>>;
 
     /// Query on-chain token balances for a wallet.
     ///
     /// # Errors
     ///
     /// Returns an error if the RPC call fails.
-    async fn get_balance(
-        &self,
-        wallet_address: &str,
-        tokens: &[Token],
-    ) -> Result<Vec<TokenAmount>>;
+    async fn get_balance(&self, wallet_address: &str, tokens: &[Token])
+    -> Result<Vec<TokenAmount>>;
 
     /// Create a step executor for this chain type.
     ///
