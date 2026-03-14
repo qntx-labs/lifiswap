@@ -1,5 +1,6 @@
 //! Cli
 
+#[allow(clippy::print_stderr)]
 fn main() {
-    eprintln!("Hello, world!");
+    eprintln!("lifiswap-cli: not yet implemented");
 }

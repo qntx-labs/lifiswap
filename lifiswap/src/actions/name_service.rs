@@ -14,6 +14,10 @@ impl LiFiClient {
     /// Tries each registered provider that matches the optional `chain_type` filter.
     /// Returns the first successful resolution, or `None` if no provider
     /// can resolve the name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal providers lock is poisoned.
     pub async fn get_name_service_address(
         &self,
         name: &str,
