@@ -1,12 +1,12 @@
-//! Integration tests for the LiFi SDK using wiremock.
+//! Integration tests for the `LiFi` SDK using wiremock.
+#![allow(clippy::panic)]
 
 use std::time::Duration;
 
+use lifiswap::LiFiClient;
+use lifiswap::client::{LiFiConfig, RetryConfig};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
-
-use lifiswap::client::{LiFiConfig, RetryConfig};
-use lifiswap::LiFiClient;
 
 /// Helper: create a client pointing at the given mock server.
 fn test_client(base_url: &str) -> LiFiClient {
@@ -91,11 +91,9 @@ async fn http_error_maps_to_lifi_error() {
 
     Mock::given(method("GET"))
         .and(path("/chains"))
-        .respond_with(
-            ResponseTemplate::new(400).set_body_json(serde_json::json!({
-                "message": "Bad Request"
-            })),
-        )
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "message": "Bad Request"
+        })))
         .mount(&server)
         .await;
 
@@ -157,10 +155,7 @@ async fn retries_on_429_with_retry_after() {
     match &err {
         lifiswap::error::LiFiError::Http(details) => {
             assert_eq!(details.status, 429);
-            assert_eq!(
-                details.retry_after,
-                Some(Duration::from_secs(1))
-            );
+            assert_eq!(details.retry_after, Some(Duration::from_secs(1)));
         }
         other => panic!("expected Http error, got: {other:?}"),
     }
@@ -247,7 +242,10 @@ async fn client_sends_sdk_headers() {
 
     Mock::given(method("GET"))
         .and(path("/chains"))
-        .and(wiremock::matchers::header("x-lifi-integrator", "test-integrator"))
+        .and(wiremock::matchers::header(
+            "x-lifi-integrator",
+            "test-integrator",
+        ))
         .and(wiremock::matchers::header_exists("x-lifi-sdk"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "chains": []
@@ -275,9 +273,7 @@ async fn client_is_clone_and_send() {
     let client = test_client(&server.uri());
     let client2 = client.clone();
 
-    let handle = tokio::spawn(async move {
-        client2.get_chains(None).await
-    });
+    let handle = tokio::spawn(async move { client2.get_chains(None).await });
 
     let _ = handle.await.unwrap().unwrap();
 }

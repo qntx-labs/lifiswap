@@ -122,7 +122,12 @@ async fn handle_response<T: DeserializeOwned>(response: Response) -> crate::erro
     let body = response.text().await.unwrap_or_default();
     let code = http_status_to_error_code(status_code);
 
-    tracing::debug!(status = status_code, ?code, ?retry_after, "API error response");
+    tracing::debug!(
+        status = status_code,
+        ?code,
+        ?retry_after,
+        "API error response"
+    );
 
     Err(LiFiError::Http(HttpErrorDetails {
         status: status_code,
