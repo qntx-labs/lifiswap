@@ -296,7 +296,6 @@ impl std::fmt::Debug for ExecutionOptions {
     }
 }
 
-
 /// Options passed when creating a step executor.
 #[derive(Debug, Clone)]
 pub struct StepExecutorOptions {

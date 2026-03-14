@@ -105,10 +105,11 @@ async fn execute_steps(
         let step = &route.steps[step_idx];
 
         if let Some(ref exec) = step.execution
-            && exec.status == ExecutionStatus::Done {
-                tracing::debug!(step_id = %step.step.id, "skipping completed step");
-                continue;
-            }
+            && exec.status == ExecutionStatus::Done
+        {
+            tracing::debug!(step_id = %step.step.id, "skipping completed step");
+            continue;
+        }
 
         let from_chain_id = step.step.action.from_chain_id;
         let to_chain_id = step.step.action.to_chain_id;

@@ -95,6 +95,70 @@ let client = LiFiClient::with_http_client(
 );
 ```
 
+## Execution Engine
+
+The SDK includes a full route execution engine that coordinates cross-chain swaps and bridges:
+
+```rust
+use lifiswap::{LiFiClient, LiFiConfig};
+use lifiswap::execution::{execute_route, convert_quote_to_route};
+use lifiswap::types::{QuoteRequest, ExecutionOptions, RouteExtended};
+use lifiswap_evm::EvmProvider;
+use alloy::signers::local::PrivateKeySigner;
+
+#[tokio::main]
+async fn main() -> lifiswap::error::Result<()> {
+    let client = LiFiClient::new(
+        LiFiConfig::builder().integrator("my-app").build(),
+    )?;
+
+    // 1. Get a quote
+    let quote = client.get_quote(&QuoteRequest::builder()
+        .from_chain("1")
+        .from_token("0xA0b8...")
+        .from_address("0xYourWallet...")
+        .from_amount("1000000")
+        .to_chain("137")
+        .to_token("0xUSDC_POL...")
+        .build()
+    ).await?;
+
+    // 2. Convert quote to route
+    let route = convert_quote_to_route(&quote, None)?;
+
+    // 3. Set up EVM provider
+    let signer: PrivateKeySigner = "0xac0974...".parse().unwrap();
+    let provider = EvmProvider::new(signer, "https://eth.llamarpc.com");
+
+    // 4. Execute the route
+    let extended: RouteExtended = execute_route(
+        &client,
+        route.into(),
+        &[Box::new(provider)],
+        ExecutionOptions::default(),
+    ).await?;
+
+    println!("Route executed: {:?}", extended.id);
+    Ok(())
+}
+```
+
+### Workspace Crates
+
+| Crate | Description |
+| --- | --- |
+| `lifiswap` | Core SDK — client, types, execution engine |
+| `lifiswap-evm` | EVM provider using [alloy](https://docs.rs/alloy) |
+
+### Token Unit Formatting
+
+```rust
+use lifiswap::types::token_units::{format_units, parse_units};
+
+assert_eq!(format_units("1000000", 6), "1.0");
+assert_eq!(parse_units("1.0", 18).unwrap(), "1000000000000000000");
+```
+
 ## API Coverage
 
 | Endpoint | Method |

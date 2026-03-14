@@ -46,3 +46,68 @@ where
     }
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn returns_immediately_on_first_success() {
+        let result = wait_for_result(
+            || async { Ok::<_, &str>(Some(42)) },
+            Duration::from_millis(10),
+            5,
+        )
+        .await;
+        assert_eq!(result, Ok(Some(42)));
+    }
+
+    #[tokio::test]
+    async fn retries_until_success() {
+        let counter = AtomicU32::new(0);
+        let result = wait_for_result(
+            || async {
+                let n = counter.fetch_add(1, Ordering::Relaxed);
+                if n < 3 {
+                    Ok::<_, &str>(None)
+                } else {
+                    Ok(Some("done"))
+                }
+            },
+            Duration::from_millis(1),
+            5,
+        )
+        .await;
+        assert_eq!(result, Ok(Some("done")));
+        assert_eq!(counter.load(Ordering::Relaxed), 4);
+    }
+
+    #[tokio::test]
+    async fn returns_none_when_exhausted() {
+        let result = wait_for_result(
+            || async { Ok::<Option<i32>, &str>(None) },
+            Duration::from_millis(1),
+            2,
+        )
+        .await;
+        assert_eq!(result, Ok(None));
+    }
+
+    #[tokio::test]
+    async fn propagates_error_immediately() {
+        let counter = AtomicU32::new(0);
+        let result = wait_for_result(
+            || async {
+                counter.fetch_add(1, Ordering::Relaxed);
+                Err::<Option<i32>, _>("boom")
+            },
+            Duration::from_millis(1),
+            5,
+        )
+        .await;
+        assert_eq!(result, Err("boom"));
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+    }
+}

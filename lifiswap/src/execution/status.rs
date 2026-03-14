@@ -60,14 +60,15 @@ impl StatusManager {
         }
 
         if let Some(ref mut exec) = step.execution
-            && exec.status == ExecutionStatus::Failed {
-                exec.started_at = now_ms();
-                exec.status = ExecutionStatus::Pending;
-                exec.signed_at = None;
-                exec.last_action_type = None;
-                exec.error = None;
-                self.update_step_in_route(step);
-            }
+            && exec.status == ExecutionStatus::Failed
+        {
+            exec.started_at = now_ms();
+            exec.status = ExecutionStatus::Pending;
+            exec.signed_at = None;
+            exec.last_action_type = None;
+            exec.error = None;
+            self.update_step_in_route(step);
+        }
 
         step.execution.clone().expect("execution was just set")
     }
@@ -189,16 +190,18 @@ impl StatusManager {
             ExecutionActionStatus::Failed => {
                 exec.status = ExecutionStatus::Failed;
                 if let Some(ref p) = params
-                    && p.error.is_some() {
-                        exec.error.clone_from(&p.error);
-                    }
+                    && p.error.is_some()
+                {
+                    exec.error.clone_from(&p.error);
+                }
             }
             ExecutionActionStatus::Pending => {
                 exec.status = ExecutionStatus::Pending;
                 if let Some(ref p) = params
-                    && let Some(signed_at) = p.signed_at {
-                        exec.signed_at = Some(signed_at);
-                    }
+                    && let Some(signed_at) = p.signed_at
+                {
+                    exec.signed_at = Some(signed_at);
+                }
             }
             ExecutionActionStatus::ActionRequired
             | ExecutionActionStatus::MessageRequired
@@ -239,9 +242,8 @@ impl StatusManager {
         }
 
         // Sort: DONE actions first
-        exec.actions.sort_by_key(|a| {
-            i32::from(a.status != ExecutionActionStatus::Done)
-        });
+        exec.actions
+            .sort_by_key(|a| i32::from(a.status != ExecutionActionStatus::Done));
 
         self.update_step_in_route(step);
     }
