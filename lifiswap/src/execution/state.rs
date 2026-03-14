@@ -114,3 +114,154 @@ impl Default for ExecutionState {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Action, ChainId, ExecutionOptions, LiFiStepExtended, Token};
+
+    fn dummy_token() -> Token {
+        Token {
+            address: "0x0".to_owned(),
+            decimals: 18,
+            symbol: "TST".to_owned(),
+            chain_id: ChainId(1),
+            coin_key: None,
+            name: "Test".to_owned(),
+            logo_uri: None,
+            price_usd: None,
+        }
+    }
+
+    fn dummy_step(id: &str) -> LiFiStepExtended {
+        LiFiStepExtended {
+            step: crate::types::LiFiStep {
+                id: id.to_owned(),
+                step_type: "swap".to_owned(),
+                tool: None,
+                tool_details: None,
+                action: Action {
+                    from_chain_id: ChainId(1),
+                    to_chain_id: ChainId(1),
+                    from_token: dummy_token(),
+                    to_token: dummy_token(),
+                    from_amount: None,
+                    from_address: None,
+                    to_address: None,
+                    slippage: None,
+                    destination_call_data: None,
+                },
+                estimate: None,
+                included_steps: None,
+                integrator: None,
+                transaction_request: None,
+                execution: None,
+                typed_data: None,
+                insurance: None,
+            },
+            execution: None,
+        }
+    }
+
+    fn dummy_route(id: &str) -> RouteExtended {
+        RouteExtended {
+            id: id.to_owned(),
+            from_chain_id: ChainId(1),
+            to_chain_id: ChainId(137),
+            from_amount: "1000".to_owned(),
+            to_amount: "999".to_owned(),
+            from_amount_usd: None,
+            to_amount_usd: None,
+            to_amount_min: None,
+            from_token: dummy_token(),
+            to_token: dummy_token(),
+            from_address: None,
+            to_address: None,
+            steps: vec![dummy_step("step-1")],
+            tags: None,
+            insurance: None,
+            gas_cost_usd: None,
+        }
+    }
+
+    #[test]
+    fn create_and_get() {
+        let state = ExecutionState::new();
+        let route = dummy_route("r1");
+        state.create(route, ExecutionOptions::default());
+
+        assert!(state.get("r1").is_some());
+        assert!(state.get("r2").is_none());
+    }
+
+    #[test]
+    fn delete_removes_entry() {
+        let state = ExecutionState::new();
+        state.create(dummy_route("r1"), ExecutionOptions::default());
+
+        state.delete("r1");
+        assert!(state.get("r1").is_none());
+    }
+
+    #[test]
+    fn active_route_ids() {
+        let state = ExecutionState::new();
+        state.create(dummy_route("a"), ExecutionOptions::default());
+        state.create(dummy_route("b"), ExecutionOptions::default());
+
+        let mut ids = state.active_route_ids();
+        ids.sort();
+        assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn update_replaces_route_data() {
+        let state = ExecutionState::new();
+        state.create(dummy_route("r1"), ExecutionOptions::default());
+
+        let mut updated = dummy_route("r1");
+        updated.from_amount = "2000".to_owned();
+        state.update(updated, ExecutionOptions::default());
+
+        let data = state.get("r1").unwrap();
+        assert_eq!(data.route.from_amount, "2000");
+    }
+
+    #[test]
+    fn with_route_mutates() {
+        let state = ExecutionState::new();
+        state.create(dummy_route("r1"), ExecutionOptions::default());
+
+        state.with_route("r1", |data| {
+            data.route.to_amount = "500".to_owned();
+        });
+
+        let data = state.get("r1").unwrap();
+        assert_eq!(data.route.to_amount, "500");
+    }
+
+    #[test]
+    fn with_route_noop_on_missing() {
+        let state = ExecutionState::new();
+        state.with_route("missing", |_| panic!("should not be called"));
+    }
+
+    #[test]
+    fn clone_shares_state() {
+        let state = ExecutionState::new();
+        let clone = state.clone();
+
+        state.create(dummy_route("r1"), ExecutionOptions::default());
+        assert!(clone.get("r1").is_some());
+    }
+
+    #[test]
+    fn create_preserves_existing_executors() {
+        let state = ExecutionState::new();
+        state.create(dummy_route("r1"), ExecutionOptions::default());
+
+        // Re-create with same ID should not panic
+        state.create(dummy_route("r1"), ExecutionOptions::default());
+        assert!(state.get("r1").is_some());
+    }
+}

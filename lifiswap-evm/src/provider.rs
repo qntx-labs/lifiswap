@@ -4,12 +4,20 @@ use alloy::network::EthereumWallet;
 use alloy::primitives::Address;
 use alloy::providers::{Provider as AlloyProvider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
+use alloy::sol;
 use async_trait::async_trait;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{ChainType, StepExecutorOptions, Token, TokenAmount};
 
 use crate::executor::EvmStepExecutor;
+
+sol! {
+    #[sol(rpc)]
+    contract IERC20Balance {
+        function balanceOf(address account) external view returns (uint256);
+    }
+}
 
 /// EVM chain provider using [`alloy`] for on-chain interactions.
 ///
@@ -73,35 +81,51 @@ impl Provider for EvmProvider {
             .await
             .map_err(|e| LiFiError::Provider {
                 code: LiFiErrorCode::RpcError,
-                message: format!("Failed to fetch balance: {e}"),
+                message: format!("Failed to fetch native balance: {e}"),
             })?;
 
-        let results = tokens
-            .iter()
-            .map(|token| {
-                let is_native = token.address == "0x0000000000000000000000000000000000000000"
-                    || token.address.to_lowercase() == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let mut results = Vec::with_capacity(tokens.len());
 
-                TokenAmount {
-                    address: token.address.clone(),
-                    decimals: token.decimals,
-                    symbol: token.symbol.clone(),
-                    chain_id: token.chain_id,
-                    coin_key: token.coin_key.clone(),
-                    name: token.name.clone(),
-                    logo_uri: token.logo_uri.clone(),
-                    price_usd: token.price_usd.clone(),
-                    amount: if is_native {
-                        Some(native_balance.to_string())
-                    } else {
-                        // ERC-20 balance queries would require contract calls
-                        // which can be added in a future iteration
-                        None
-                    },
-                    block_number: None,
+        for token in tokens {
+            let is_native = token.address == "0x0000000000000000000000000000000000000000"
+                || token.address.to_lowercase() == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+            let amount = if is_native {
+                Some(native_balance.to_string())
+            } else {
+                match token.address.parse::<Address>() {
+                    Ok(token_addr) => {
+                        let contract = IERC20Balance::new(token_addr, &provider);
+                        match contract.balanceOf(addr).call().await {
+                            Ok(bal) => Some(bal.to_string()),
+                            Err(e) => {
+                                tracing::warn!(
+                                    token = %token.symbol,
+                                    address = %token.address,
+                                    error = %e,
+                                    "failed to query ERC-20 balance, skipping"
+                                );
+                                None
+                            }
+                        }
+                    }
+                    Err(_) => None,
                 }
-            })
-            .collect();
+            };
+
+            results.push(TokenAmount {
+                address: token.address.clone(),
+                decimals: token.decimals,
+                symbol: token.symbol.clone(),
+                chain_id: token.chain_id,
+                coin_key: token.coin_key.clone(),
+                name: token.name.clone(),
+                logo_uri: token.logo_uri.clone(),
+                price_usd: token.price_usd.clone(),
+                amount,
+                block_number: None,
+            });
+        }
 
         Ok(results)
     }

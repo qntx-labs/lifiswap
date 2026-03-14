@@ -93,6 +93,33 @@ impl LiFiClient {
             .map(|d| d.route.clone())
     }
 
+    /// Update execution settings for an active route.
+    ///
+    /// Primarily used to switch between foreground and background execution
+    /// while a route is actively being processed. When `execute_in_background`
+    /// is set, user interaction is disabled on all active executors.
+    ///
+    /// Does nothing if the route is not currently executing.
+    pub fn update_route_execution(&self, route_id: &str, options: ExecutionOptions) {
+        let state = self.execution_state();
+        state.with_route(route_id, |data| {
+            if options.execute_in_background {
+                for executor in &mut data.executors {
+                    executor.set_interaction(InteractionSettings {
+                        allow_interaction: false,
+                        allow_updates: true,
+                        allow_execution: true,
+                    });
+                }
+            } else {
+                for executor in &mut data.executors {
+                    executor.set_interaction(InteractionSettings::default());
+                }
+            }
+            data.execution_options = options;
+        });
+    }
+
     async fn execute_steps(
         &self,
         mut route: RouteExtended,

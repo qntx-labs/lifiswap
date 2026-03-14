@@ -97,3 +97,226 @@ impl TaskPipeline {
         Ok(TaskStatus::Completed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use super::*;
+    use crate::execution::state::ExecutionState;
+    use crate::execution::status::StatusManager;
+    use crate::types::{Action, ChainId, LiFiStepExtended, Token};
+
+    fn dummy_token() -> Token {
+        Token {
+            address: "0x0".to_owned(),
+            decimals: 18,
+            symbol: "TST".to_owned(),
+            chain_id: ChainId(1),
+            coin_key: None,
+            name: "Test".to_owned(),
+            logo_uri: None,
+            price_usd: None,
+        }
+    }
+
+    fn dummy_step() -> LiFiStepExtended {
+        LiFiStepExtended {
+            step: crate::types::LiFiStep {
+                id: "s1".to_owned(),
+                step_type: "swap".to_owned(),
+                tool: None,
+                tool_details: None,
+                action: Action {
+                    from_chain_id: ChainId(1),
+                    to_chain_id: ChainId(1),
+                    from_token: dummy_token(),
+                    to_token: dummy_token(),
+                    from_amount: None,
+                    from_address: None,
+                    to_address: None,
+                    slippage: None,
+                    destination_call_data: None,
+                },
+                estimate: None,
+                included_steps: None,
+                integrator: None,
+                transaction_request: None,
+                execution: None,
+                typed_data: None,
+                insurance: None,
+            },
+            execution: None,
+        }
+    }
+
+    fn make_ctx<'a>(
+        client: &'a LiFiClient,
+        step: &'a mut LiFiStepExtended,
+        mgr: &'a StatusManager,
+    ) -> ExecutionContext<'a> {
+        ExecutionContext {
+            client,
+            step,
+            status_manager: mgr,
+            is_bridge_execution: false,
+            allow_user_interaction: true,
+        }
+    }
+
+    struct CompletingTask;
+    #[async_trait]
+    impl ExecutionTask for CompletingTask {
+        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
+            Ok(TaskStatus::Completed)
+        }
+    }
+
+    struct PausingTask;
+    #[async_trait]
+    impl ExecutionTask for PausingTask {
+        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
+            Ok(TaskStatus::Paused)
+        }
+    }
+
+    struct FailingTask;
+    #[async_trait]
+    impl ExecutionTask for FailingTask {
+        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
+            Err(crate::error::LiFiError::Validation("boom".to_owned()))
+        }
+    }
+
+    struct CountingTask(Arc<AtomicU32>);
+    #[async_trait]
+    impl ExecutionTask for CountingTask {
+        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(TaskStatus::Completed)
+        }
+    }
+
+    struct SkippedTask;
+    #[async_trait]
+    impl ExecutionTask for SkippedTask {
+        async fn should_run(&self, _ctx: &ExecutionContext<'_>) -> bool {
+            false
+        }
+        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
+            panic!("should never run");
+        }
+    }
+
+    #[tokio::test]
+    async fn pipeline_completes_all_tasks() {
+        let client = LiFiClient::new(
+            crate::client::LiFiConfig::builder()
+                .integrator("test")
+                .build(),
+        )
+        .unwrap();
+        let state = ExecutionState::new();
+        let mgr = StatusManager::new("r1".to_owned(), state);
+        let mut step = dummy_step();
+
+        let counter = Arc::new(AtomicU32::new(0));
+        let pipeline = TaskPipeline::new(vec![
+            Box::new(CountingTask(Arc::clone(&counter))),
+            Box::new(CountingTask(Arc::clone(&counter))),
+            Box::new(CountingTask(Arc::clone(&counter))),
+        ]);
+
+        let result = pipeline.run(&mut make_ctx(&client, &mut step, &mgr)).await;
+        assert_eq!(result.unwrap(), TaskStatus::Completed);
+        assert_eq!(counter.load(Ordering::Relaxed), 3);
+    }
+
+    #[tokio::test]
+    async fn pipeline_stops_on_pause() {
+        let client = LiFiClient::new(
+            crate::client::LiFiConfig::builder()
+                .integrator("test")
+                .build(),
+        )
+        .unwrap();
+        let state = ExecutionState::new();
+        let mgr = StatusManager::new("r1".to_owned(), state);
+        let mut step = dummy_step();
+
+        let counter = Arc::new(AtomicU32::new(0));
+        let pipeline = TaskPipeline::new(vec![
+            Box::new(CountingTask(Arc::clone(&counter))),
+            Box::new(PausingTask),
+            Box::new(CountingTask(Arc::clone(&counter))),
+        ]);
+
+        let result = pipeline.run(&mut make_ctx(&client, &mut step, &mgr)).await;
+        assert_eq!(result.unwrap(), TaskStatus::Paused);
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn pipeline_stops_on_error() {
+        let client = LiFiClient::new(
+            crate::client::LiFiConfig::builder()
+                .integrator("test")
+                .build(),
+        )
+        .unwrap();
+        let state = ExecutionState::new();
+        let mgr = StatusManager::new("r1".to_owned(), state);
+        let mut step = dummy_step();
+
+        let counter = Arc::new(AtomicU32::new(0));
+        let pipeline = TaskPipeline::new(vec![
+            Box::new(CountingTask(Arc::clone(&counter))),
+            Box::new(FailingTask),
+            Box::new(CountingTask(Arc::clone(&counter))),
+        ]);
+
+        let result = pipeline.run(&mut make_ctx(&client, &mut step, &mgr)).await;
+        assert!(result.is_err());
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn pipeline_skips_tasks_where_should_run_false() {
+        let client = LiFiClient::new(
+            crate::client::LiFiConfig::builder()
+                .integrator("test")
+                .build(),
+        )
+        .unwrap();
+        let state = ExecutionState::new();
+        let mgr = StatusManager::new("r1".to_owned(), state);
+        let mut step = dummy_step();
+
+        let pipeline = TaskPipeline::new(vec![
+            Box::new(CompletingTask),
+            Box::new(SkippedTask),
+            Box::new(CompletingTask),
+        ]);
+
+        let result = pipeline.run(&mut make_ctx(&client, &mut step, &mgr)).await;
+        assert_eq!(result.unwrap(), TaskStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn empty_pipeline_completes() {
+        let client = LiFiClient::new(
+            crate::client::LiFiConfig::builder()
+                .integrator("test")
+                .build(),
+        )
+        .unwrap();
+        let state = ExecutionState::new();
+        let mgr = StatusManager::new("r1".to_owned(), state);
+        let mut step = dummy_step();
+
+        let pipeline = TaskPipeline::new(vec![]);
+        let result = pipeline.run(&mut make_ctx(&client, &mut step, &mgr)).await;
+        assert_eq!(result.unwrap(), TaskStatus::Completed);
+    }
+}

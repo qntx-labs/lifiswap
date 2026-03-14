@@ -351,3 +351,321 @@ pub struct ActionUpdateParams {
     /// Substatus message.
     pub substatus_message: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Action, ChainId, Token};
+
+    fn dummy_token() -> Token {
+        Token {
+            address: "0x0".to_owned(),
+            decimals: 18,
+            symbol: "TST".to_owned(),
+            chain_id: ChainId(1),
+            coin_key: None,
+            name: "Test".to_owned(),
+            logo_uri: None,
+            price_usd: None,
+        }
+    }
+
+    fn dummy_step(id: &str) -> LiFiStepExtended {
+        LiFiStepExtended {
+            step: crate::types::LiFiStep {
+                id: id.to_owned(),
+                step_type: "swap".to_owned(),
+                tool: None,
+                tool_details: None,
+                action: Action {
+                    from_chain_id: ChainId(1),
+                    to_chain_id: ChainId(1),
+                    from_token: dummy_token(),
+                    to_token: dummy_token(),
+                    from_amount: None,
+                    from_address: None,
+                    to_address: None,
+                    slippage: None,
+                    destination_call_data: None,
+                },
+                estimate: None,
+                included_steps: None,
+                integrator: None,
+                transaction_request: None,
+                execution: None,
+                typed_data: None,
+                insurance: None,
+            },
+            execution: None,
+        }
+    }
+
+    fn make_manager() -> StatusManager {
+        let state = ExecutionState::new();
+        StatusManager::new("route-1".to_owned(), state)
+    }
+
+    #[test]
+    fn initialize_execution_creates_pending() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+
+        let exec = mgr.initialize_execution(&mut step);
+        assert_eq!(exec.status, ExecutionStatus::Pending);
+        assert!(step.execution.is_some());
+    }
+
+    #[test]
+    fn initialize_execution_resets_failed() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+
+        mgr.initialize_execution(&mut step);
+        step.execution.as_mut().unwrap().status = ExecutionStatus::Failed;
+
+        let exec = mgr.initialize_execution(&mut step);
+        assert_eq!(exec.status, ExecutionStatus::Pending);
+        assert!(exec.error.is_none());
+    }
+
+    #[test]
+    fn create_action_returns_error_without_init() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+
+        let result = mgr.create_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            1,
+            ExecutionActionStatus::Started,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_action_succeeds_after_init() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        mgr.initialize_execution(&mut step);
+
+        let action = mgr
+            .create_action(
+                &mut step,
+                ExecutionActionType::Swap,
+                1,
+                ExecutionActionStatus::Started,
+            )
+            .unwrap();
+
+        assert_eq!(action.action_type, ExecutionActionType::Swap);
+        assert_eq!(action.status, ExecutionActionStatus::Started);
+        assert_eq!(action.chain_id, Some(1));
+    }
+
+    #[test]
+    fn find_action_returns_none_when_empty() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        mgr.initialize_execution(&mut step);
+
+        assert!(mgr.find_action(&step, ExecutionActionType::Swap).is_none());
+    }
+
+    #[test]
+    fn find_action_returns_created_action() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        mgr.initialize_execution(&mut step);
+        mgr.create_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            1,
+            ExecutionActionStatus::Started,
+        )
+        .unwrap();
+
+        let found = mgr.find_action(&step, ExecutionActionType::Swap);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().action_type, ExecutionActionType::Swap);
+    }
+
+    #[test]
+    fn initialize_action_creates_new() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        mgr.initialize_execution(&mut step);
+
+        let action = mgr
+            .initialize_action(
+                &mut step,
+                ExecutionActionType::CrossChain,
+                137,
+                ExecutionActionStatus::Pending,
+            )
+            .unwrap();
+        assert_eq!(action.action_type, ExecutionActionType::CrossChain);
+    }
+
+    #[test]
+    fn initialize_action_updates_existing() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        mgr.initialize_execution(&mut step);
+
+        mgr.create_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            1,
+            ExecutionActionStatus::Started,
+        )
+        .unwrap();
+
+        let action = mgr
+            .initialize_action(
+                &mut step,
+                ExecutionActionType::Swap,
+                1,
+                ExecutionActionStatus::Done,
+            )
+            .unwrap();
+        assert_eq!(action.status, ExecutionActionStatus::Done);
+    }
+
+    #[test]
+    fn update_action_sets_failed_status() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        mgr.initialize_execution(&mut step);
+        mgr.create_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            1,
+            ExecutionActionStatus::Started,
+        )
+        .unwrap();
+
+        mgr.update_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            ExecutionActionStatus::Failed,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            step.execution.as_ref().unwrap().status,
+            ExecutionStatus::Failed
+        );
+    }
+
+    #[test]
+    fn update_action_with_tx_hash() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        mgr.initialize_execution(&mut step);
+        mgr.create_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            1,
+            ExecutionActionStatus::Started,
+        )
+        .unwrap();
+
+        mgr.update_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            ExecutionActionStatus::Pending,
+            Some(ActionUpdateParams {
+                tx_hash: Some("0xabc".to_owned()),
+                signed_at: Some(12345),
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+
+        let action = mgr.find_action(&step, ExecutionActionType::Swap).unwrap();
+        assert_eq!(action.tx_hash.as_deref(), Some("0xabc"));
+        assert_eq!(step.execution.as_ref().unwrap().signed_at, Some(12345));
+    }
+
+    #[test]
+    fn update_action_returns_error_without_init() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+
+        let result = mgr.update_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            ExecutionActionStatus::Done,
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn update_execution_sets_fields() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        mgr.initialize_execution(&mut step);
+
+        mgr.update_execution(
+            &mut step,
+            ExecutionUpdate {
+                status: Some(ExecutionStatus::Done),
+                from_amount: Some("100".to_owned()),
+                to_amount: Some("99".to_owned()),
+                ..Default::default()
+            },
+        );
+
+        let exec = step.execution.as_ref().unwrap();
+        assert_eq!(exec.status, ExecutionStatus::Done);
+        assert_eq!(exec.from_amount.as_deref(), Some("100"));
+        assert_eq!(exec.to_amount.as_deref(), Some("99"));
+    }
+
+    #[test]
+    fn allow_updates_disables_propagation() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        // Just verify it doesn't panic when updates are disabled
+        let mut mgr = mgr;
+        mgr.allow_updates(false);
+        mgr.initialize_execution(&mut step);
+        assert!(step.execution.is_some());
+    }
+
+    #[test]
+    fn done_actions_sorted_first() {
+        let mgr = make_manager();
+        let mut step = dummy_step("s1");
+        mgr.initialize_execution(&mut step);
+
+        mgr.create_action(
+            &mut step,
+            ExecutionActionType::CheckAllowance,
+            1,
+            ExecutionActionStatus::Started,
+        )
+        .unwrap();
+        mgr.create_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            1,
+            ExecutionActionStatus::Started,
+        )
+        .unwrap();
+
+        mgr.update_action(
+            &mut step,
+            ExecutionActionType::Swap,
+            ExecutionActionStatus::Done,
+            None,
+        )
+        .unwrap();
+
+        let actions = &step.execution.as_ref().unwrap().actions;
+        assert_eq!(actions[0].status, ExecutionActionStatus::Done);
+        assert_eq!(actions[0].action_type, ExecutionActionType::Swap);
+    }
+}
