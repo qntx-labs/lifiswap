@@ -2614,7 +2614,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "lifiswap"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "backon",
  "bon",
@@ -2631,18 +2631,18 @@ dependencies = [
 
 [[package]]
 name = "lifiswap-btc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "lifiswap",
 ]
 
 [[package]]
 name = "lifiswap-cli"
-version = "0.2.0"
+version = "0.2.1"
 
 [[package]]
 name = "lifiswap-evm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "alloy",
  "lifiswap",
@@ -2653,14 +2653,14 @@ dependencies = [
 
 [[package]]
 name = "lifiswap-sui"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "lifiswap",
 ]
 
 [[package]]
 name = "lifiswap-svm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "lifiswap",
 ]
