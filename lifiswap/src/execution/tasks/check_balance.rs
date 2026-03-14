@@ -9,7 +9,7 @@ use crate::types::{ExecutionActionStatus, ExecutionActionType, TaskStatus};
 /// Checks that the wallet has sufficient balance before executing a step.
 ///
 /// This is a generic task included in every chain's pipeline.
-/// It initializes the SWAP or CROSS_CHAIN action and validates the
+/// It initializes the SWAP or `CROSS_CHAIN` action and validates the
 /// wallet address is present.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CheckBalanceTask;

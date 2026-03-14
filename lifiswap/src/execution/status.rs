@@ -27,7 +27,8 @@ pub struct StatusManager {
 
 impl StatusManager {
     /// Create a new status manager for the given route.
-    pub fn new(route_id: String) -> Self {
+    #[must_use]
+    pub const fn new(route_id: String) -> Self {
         Self {
             route_id,
             should_update: true,
@@ -58,8 +59,8 @@ impl StatusManager {
             self.update_step_in_route(step);
         }
 
-        if let Some(ref mut exec) = step.execution {
-            if exec.status == ExecutionStatus::Failed {
+        if let Some(ref mut exec) = step.execution
+            && exec.status == ExecutionStatus::Failed {
                 exec.started_at = now_ms();
                 exec.status = ExecutionStatus::Pending;
                 exec.signed_at = None;
@@ -67,7 +68,6 @@ impl StatusManager {
                 exec.error = None;
                 self.update_step_in_route(step);
             }
-        }
 
         step.execution.clone().expect("execution was just set")
     }
@@ -188,19 +188,17 @@ impl StatusManager {
         match status {
             ExecutionActionStatus::Failed => {
                 exec.status = ExecutionStatus::Failed;
-                if let Some(ref p) = params {
-                    if p.error.is_some() {
+                if let Some(ref p) = params
+                    && p.error.is_some() {
                         exec.error.clone_from(&p.error);
                     }
-                }
             }
             ExecutionActionStatus::Pending => {
                 exec.status = ExecutionStatus::Pending;
-                if let Some(ref p) = params {
-                    if let Some(signed_at) = p.signed_at {
+                if let Some(ref p) = params
+                    && let Some(signed_at) = p.signed_at {
                         exec.signed_at = Some(signed_at);
                     }
-                }
             }
             ExecutionActionStatus::ActionRequired
             | ExecutionActionStatus::MessageRequired
@@ -242,18 +240,14 @@ impl StatusManager {
 
         // Sort: DONE actions first
         exec.actions.sort_by_key(|a| {
-            if a.status == ExecutionActionStatus::Done {
-                0
-            } else {
-                1
-            }
+            i32::from(a.status != ExecutionActionStatus::Done)
         });
 
         self.update_step_in_route(step);
     }
 
     /// Enable or disable status update propagation.
-    pub fn allow_updates(&mut self, value: bool) {
+    pub const fn allow_updates(&mut self, value: bool) {
         self.should_update = value;
     }
 

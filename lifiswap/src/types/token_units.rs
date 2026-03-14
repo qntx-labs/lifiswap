@@ -104,7 +104,7 @@ pub fn parse_units(amount: &str, decimals: u8) -> Option<String> {
     } else {
         fraction
     };
-    let frac_padded = format!("{:0<width$}", frac_trimmed, width = dec);
+    let frac_padded = format!("{frac_trimmed:0<dec$}");
 
     let raw = format!("{integer}{frac_padded}");
     let raw = raw.trim_start_matches('0');

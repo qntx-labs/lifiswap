@@ -155,7 +155,7 @@ pub struct StepExecution {
     /// Gas costs incurred.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas_costs: Option<Vec<GasCost>>,
-    /// Internal (LiFi explorer) transaction link.
+    /// Internal (`LiFi` explorer) transaction link.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub internal_tx_link: Option<String>,
     /// External (bridge explorer) transaction link.
@@ -276,6 +276,7 @@ impl Default for InteractionSettings {
 }
 
 /// Options for configuring route execution behavior.
+#[derive(Default)]
 pub struct ExecutionOptions {
     /// Hook called whenever the route is updated during execution.
     pub update_route_hook: Option<Box<dyn Fn(&RouteExtended) + Send + Sync>>,
@@ -295,14 +296,6 @@ impl std::fmt::Debug for ExecutionOptions {
     }
 }
 
-impl Default for ExecutionOptions {
-    fn default() -> Self {
-        Self {
-            update_route_hook: None,
-            execute_in_background: false,
-        }
-    }
-}
 
 /// Options passed when creating a step executor.
 #[derive(Debug, Clone)]

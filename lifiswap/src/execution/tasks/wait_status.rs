@@ -19,7 +19,7 @@ pub struct WaitForTransactionStatusTask {
 impl WaitForTransactionStatusTask {
     /// Create a task that waits for swap transaction status.
     #[must_use]
-    pub fn swap() -> Self {
+    pub const fn swap() -> Self {
         Self {
             action_type: ExecutionActionType::Swap,
         }
@@ -27,7 +27,7 @@ impl WaitForTransactionStatusTask {
 
     /// Create a task that waits for cross-chain receiving status.
     #[must_use]
-    pub fn receiving_chain() -> Self {
+    pub const fn receiving_chain() -> Self {
         Self {
             action_type: ExecutionActionType::ReceivingChain,
         }

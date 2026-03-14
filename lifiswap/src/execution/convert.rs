@@ -52,30 +52,25 @@ pub fn convert_quote_to_route(
     let mut to_amount_usd = estimate.to_amount_usd.clone();
 
     let opts = options.unwrap_or_default();
-    if opts.adjust_zero_output_from_previous_step {
-        if let Some(ref included) = quote.included_steps {
-            if !included.is_empty()
+    if opts.adjust_zero_output_from_previous_step
+        && let Some(ref included) = quote.included_steps
+            && !included.is_empty()
                 && is_zero_output(
                     Some(&to_amount),
                     to_amount_min.as_deref(),
                     to_amount_usd.as_deref(),
                 )
-            {
-                if let Some(prev) = included.iter().rev().find(|s| {
+                && let Some(prev) = included.iter().rev().find(|s| {
                     s.estimate.as_ref().is_some_and(|e| {
                         parse_bigint(e.to_amount.as_deref()) > 0
                             || parse_bigint(e.to_amount_min.as_deref()) > 0
                     })
-                }) {
-                    if let Some(ref prev_est) = prev.estimate {
+                })
+                    && let Some(ref prev_est) = prev.estimate {
                         to_amount = prev_est.to_amount.clone().unwrap_or_default();
                         to_amount_min = prev_est.to_amount_min.clone();
                         to_amount_usd = prev_est.to_amount_usd.clone();
                     }
-                }
-            }
-        }
-    }
 
     let from_amount_usd = estimate
         .from_amount_usd

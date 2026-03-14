@@ -76,6 +76,7 @@ impl std::fmt::Debug for TaskPipeline {
 
 impl TaskPipeline {
     /// Create a new pipeline from a list of tasks.
+    #[must_use]
     pub fn new(tasks: Vec<Box<dyn ExecutionTask>>) -> Self {
         Self { tasks }
     }
