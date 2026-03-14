@@ -193,7 +193,8 @@ pub struct ContractCallsQuoteRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct GasRecommendationRequest {
-    /// Chain ID to get gas recommendation for.
+    /// Chain ID to get gas recommendation for (used as URL path segment).
+    #[serde(skip_serializing)]
     pub chain_id: ChainId,
     /// Source chain for cross-chain gas estimation.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -4,6 +4,7 @@
 //! a unified [`LiFiError`] enum for all SDK operations.
 
 use std::fmt;
+use std::time::Duration;
 
 /// `LiFi` error codes, aligned with the `TypeScript` SDK.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -62,6 +63,8 @@ pub struct HttpErrorDetails {
     pub body: String,
     /// Mapped `LiFi` error code.
     pub code: LiFiErrorCode,
+    /// Server-suggested retry delay from `Retry-After` header (429 responses).
+    pub retry_after: Option<Duration>,
 }
 
 impl fmt::Display for HttpErrorDetails {
@@ -161,6 +164,16 @@ impl LiFiError {
             Self::Http(details) => matches!(details.status, 429 | 500..=599),
             Self::Network(e) => e.is_timeout() || e.is_connect(),
             _ => false,
+        }
+    }
+
+    /// Returns the server-suggested retry delay if this is a 429 response
+    /// with a `Retry-After` header.
+    #[must_use]
+    pub const fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::Http(details) => details.retry_after,
+            _ => None,
         }
     }
 }

@@ -15,22 +15,7 @@ impl LiFiClient {
         &self,
         params: &GasRecommendationRequest,
     ) -> Result<GasRecommendationResponse> {
-        let mut url = url::Url::parse(&format!(
-            "{}/gas/suggestion/{}",
-            self.api_url(),
-            params.chain_id
-        ))?;
-
-        {
-            let mut qs = url.query_pairs_mut();
-            if let Some(ref fc) = params.from_chain {
-                qs.append_pair("fromChain", &fc.to_string());
-            }
-            if let Some(ref ft) = params.from_token {
-                qs.append_pair("fromToken", ft);
-            }
-        }
-
-        self.get_url(&url).await
+        let path = format!("/gas/suggestion/{}", params.chain_id);
+        self.get(&path, params).await
     }
 }

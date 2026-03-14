@@ -4,6 +4,8 @@
 //! which provide automatic retries via [`backon`] with exponential backoff +
 //! jitter, structured tracing, and consistent error mapping.
 
+use std::time::Duration;
+
 use backon::Retryable;
 use reqwest::Response;
 use serde::de::DeserializeOwned;
@@ -98,6 +100,13 @@ impl LiFiClient {
     }
 }
 
+/// Parse the `Retry-After` header value as delta-seconds.
+fn parse_retry_after(response: &Response) -> Option<Duration> {
+    let val = response.headers().get(reqwest::header::RETRY_AFTER)?;
+    let secs = val.to_str().ok()?.trim().parse::<u64>().ok()?;
+    Some(Duration::from_secs(secs))
+}
+
 /// Map an HTTP response to `Ok(T)` or an appropriate [`LiFiError`].
 async fn handle_response<T: DeserializeOwned>(response: Response) -> crate::error::Result<T> {
     let status = response.status();
@@ -109,14 +118,16 @@ async fn handle_response<T: DeserializeOwned>(response: Response) -> crate::erro
     }
 
     let status_code = status.as_u16();
+    let retry_after = parse_retry_after(&response);
     let body = response.text().await.unwrap_or_default();
     let code = http_status_to_error_code(status_code);
 
-    tracing::debug!(status = status_code, ?code, "API error response");
+    tracing::debug!(status = status_code, ?code, ?retry_after, "API error response");
 
     Err(LiFiError::Http(HttpErrorDetails {
         status: status_code,
         body,
         code,
+        retry_after,
     }))
 }

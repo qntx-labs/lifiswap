@@ -110,22 +110,6 @@ impl LiFiClient {
         &self,
         params: &TransactionAnalyticsRequest,
     ) -> Result<TransactionAnalyticsResponse> {
-        let mut url = url::Url::parse(&format!("{}/analytics/transfers", self.api_url()))?;
-
-        {
-            let mut qs = url.query_pairs_mut();
-            qs.append_pair("wallet", &params.wallet);
-            if let Some(ref fc) = params.from_chain {
-                qs.append_pair("fromChain", &fc.to_string());
-            }
-            if let Some(ref tc) = params.to_chain {
-                qs.append_pair("toChain", &tc.to_string());
-            }
-            if let Some(ref s) = params.status {
-                qs.append_pair("status", s);
-            }
-        }
-
-        self.get_url(&url).await
+        self.get("/analytics/transfers", params).await
     }
 }
