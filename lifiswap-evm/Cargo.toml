@@ -9,7 +9,6 @@ description = "LiFi SDK - EVM chain provider (alloy-based)"
 [dependencies]
 lifiswap = { workspace = true }
 alloy = { workspace = true }
-async-trait = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }

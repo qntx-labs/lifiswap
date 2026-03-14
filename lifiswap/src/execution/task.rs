@@ -1,6 +1,7 @@
 //! Execution task trait and pipeline.
 
-use async_trait::async_trait;
+use std::future::Future;
+use std::pin::Pin;
 
 use super::status::StatusManager;
 use crate::LiFiClient;
@@ -42,13 +43,15 @@ impl std::fmt::Debug for ExecutionContext<'_> {
 /// `SignAndExecuteTask`). The core crate provides generic tasks like
 /// [`CheckBalanceTask`](super::tasks::CheckBalanceTask) and
 /// [`PrepareTransactionTask`](super::tasks::PrepareTransactionTask).
-#[async_trait]
 pub trait ExecutionTask: Send + Sync {
     /// Whether this task should run given the current context.
     ///
     /// Default: always runs.
-    async fn should_run(&self, _ctx: &ExecutionContext<'_>) -> bool {
-        true
+    fn should_run<'a>(
+        &'a self,
+        _ctx: &'a ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+        Box::pin(async { true })
     }
 
     /// Execute the task, returning whether the pipeline should continue or pause.
@@ -56,7 +59,10 @@ pub trait ExecutionTask: Send + Sync {
     /// # Errors
     ///
     /// Returns an error if the task fails (e.g. insufficient balance, tx failure).
-    async fn run(&self, ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus>;
+    fn run<'a>(
+        &'a self,
+        ctx: &'a mut ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>>;
 }
 
 /// A sequential pipeline of execution tasks.
@@ -116,7 +122,6 @@ mod tests {
 
     struct MockProvider;
 
-    #[async_trait]
     impl Provider for MockProvider {
         fn chain_type(&self) -> ChainType {
             ChainType::EVM
@@ -124,20 +129,25 @@ mod tests {
         fn is_address(&self, _address: &str) -> bool {
             true
         }
-        async fn resolve_address(
-            &self,
-            _name: &str,
+        fn resolve_address<'a>(
+            &'a self,
+            _name: &'a str,
             _chain_id: Option<u64>,
-        ) -> Result<Option<String>> {
-            Ok(None)
+        ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
+            Box::pin(async { Ok(None) })
         }
-        async fn get_balance(&self, _wallet: &str, _tokens: &[Token]) -> Result<Vec<TokenAmount>> {
-            Ok(vec![])
+        fn get_balance<'a>(
+            &'a self,
+            _wallet: &'a str,
+            _tokens: &'a [Token],
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<TokenAmount>>> + Send + 'a>> {
+            Box::pin(async { Ok(vec![]) })
         }
-        async fn create_step_executor(
-            &self,
+        fn create_step_executor<'a>(
+            &'a self,
             _options: StepExecutorOptions,
-        ) -> Result<Box<dyn crate::provider::StepExecutor>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Box<dyn crate::provider::StepExecutor>>> + Send + 'a>>
+        {
             unimplemented!()
         }
     }
@@ -163,46 +173,61 @@ mod tests {
     }
 
     struct CompletingTask;
-    #[async_trait]
     impl ExecutionTask for CompletingTask {
-        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-            Ok(TaskStatus::Completed)
+        fn run<'a>(
+            &'a self,
+            _ctx: &'a mut ExecutionContext<'_>,
+        ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+            Box::pin(async { Ok(TaskStatus::Completed) })
         }
     }
 
     struct PausingTask;
-    #[async_trait]
     impl ExecutionTask for PausingTask {
-        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-            Ok(TaskStatus::Paused)
+        fn run<'a>(
+            &'a self,
+            _ctx: &'a mut ExecutionContext<'_>,
+        ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+            Box::pin(async { Ok(TaskStatus::Paused) })
         }
     }
 
     struct FailingTask;
-    #[async_trait]
     impl ExecutionTask for FailingTask {
-        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-            Err(crate::error::LiFiError::Validation("boom".to_owned()))
+        fn run<'a>(
+            &'a self,
+            _ctx: &'a mut ExecutionContext<'_>,
+        ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+            Box::pin(async { Err(crate::error::LiFiError::Validation("boom".to_owned())) })
         }
     }
 
     struct CountingTask(Arc<AtomicU32>);
-    #[async_trait]
     impl ExecutionTask for CountingTask {
-        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-            self.0.fetch_add(1, Ordering::Relaxed);
-            Ok(TaskStatus::Completed)
+        fn run<'a>(
+            &'a self,
+            _ctx: &'a mut ExecutionContext<'_>,
+        ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+            Box::pin(async move {
+                self.0.fetch_add(1, Ordering::Relaxed);
+                Ok(TaskStatus::Completed)
+            })
         }
     }
 
     struct SkippedTask;
-    #[async_trait]
     impl ExecutionTask for SkippedTask {
-        async fn should_run(&self, _ctx: &ExecutionContext<'_>) -> bool {
-            false
+        fn should_run<'a>(
+            &'a self,
+            _ctx: &'a ExecutionContext<'_>,
+        ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+            Box::pin(async { false })
         }
         #[allow(clippy::unimplemented)]
-        async fn run(&self, _ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
+        fn run<'a>(
+            &'a self,
+            _ctx: &'a mut ExecutionContext<'_>,
+        ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
             unreachable!("SkippedTask::run should never be called");
         }
     }

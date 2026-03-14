@@ -5,10 +5,11 @@
 
 use crate::LiFiClient;
 use crate::error::{LiFiError, LiFiErrorCode, Result};
+use crate::execution::convert::convert_quote_to_route;
 use crate::provider::{Provider, StepExecutor};
 use crate::types::{
-    ExecutionOptions, ExecutionStatus, InteractionSettings, Route, RouteExtended,
-    StepExecutorOptions,
+    ExecutionOptions, ExecutionStatus, InteractionSettings, LiFiStep, QuoteRequest, Route,
+    RouteExtended, StepExecutorOptions,
 };
 
 async fn create_executor(
@@ -58,6 +59,69 @@ impl LiFiClient {
     ) -> Result<RouteExtended> {
         let extended: RouteExtended = route.into();
         self.execute_steps(extended, options).await
+    }
+
+    /// Execute a quote (single-step) by converting it to a route first.
+    ///
+    /// This is a convenience wrapper around [`convert_quote_to_route`] +
+    /// [`execute_route`](Self::execute_route).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the quote cannot be converted or execution fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let quote = client.get_quote(&request).await?;
+    /// let result = client.execute_quote(quote, Default::default()).await?;
+    /// ```
+    pub async fn execute_quote(
+        &self,
+        quote: LiFiStep,
+        options: ExecutionOptions,
+    ) -> Result<RouteExtended> {
+        let route = convert_quote_to_route(&quote, None)?;
+        self.execute_route(route, options).await
+    }
+
+    /// Get the best quote and execute it in one call.
+    ///
+    /// This is the simplest way to perform a cross-chain or same-chain swap:
+    /// a single method call that fetches the optimal quote from the LI.FI API,
+    /// converts it into a route, and executes it end-to-end.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the quote request fails, conversion fails,
+    /// or execution fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use lifiswap::types::QuoteRequest;
+    ///
+    /// let result = client
+    ///     .swap(
+    ///         &QuoteRequest::builder()
+    ///             .from_chain("42161")
+    ///             .from_token("0xaf88d065e77c8cC2239327C5EDb3A432268e5831")
+    ///             .from_address("0xYourWallet")
+    ///             .from_amount("10000000")
+    ///             .to_chain("10")
+    ///             .to_token("0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1")
+    ///             .build(),
+    ///         Default::default(),
+    ///     )
+    ///     .await?;
+    /// ```
+    pub async fn swap(
+        &self,
+        request: &QuoteRequest,
+        options: ExecutionOptions,
+    ) -> Result<RouteExtended> {
+        let quote = self.get_quote(request).await?;
+        self.execute_quote(quote, options).await
     }
 
     /// Resume a previously started (and possibly failed/paused) route.

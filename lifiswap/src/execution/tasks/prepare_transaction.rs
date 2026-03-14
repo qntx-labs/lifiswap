@@ -4,7 +4,8 @@
 //! `getStepTransaction` and runs `step_comparison` to validate exchange
 //! rate changes against the slippage threshold (mirroring TS SDK behavior).
 
-use async_trait::async_trait;
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::error::{LiFiError, LiFiErrorCode, Result};
 use crate::execution::step_comparison::step_comparison;
@@ -27,74 +28,79 @@ use crate::types::{ExecutionActionStatus, ExecutionActionType, TaskStatus};
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PrepareTransactionTask;
 
-#[async_trait]
 impl ExecutionTask for PrepareTransactionTask {
-    async fn run(&self, ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-        let action_type = if ctx.is_bridge_execution {
-            ExecutionActionType::CrossChain
-        } else {
-            ExecutionActionType::Swap
-        };
+    fn run<'a>(
+        &'a self,
+        ctx: &'a mut ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+        Box::pin(async move {
+            let action_type = if ctx.is_bridge_execution {
+                ExecutionActionType::CrossChain
+            } else {
+                ExecutionActionType::Swap
+            };
 
-        let _action = ctx
-            .status_manager
-            .find_action(ctx.step, action_type)
-            .ok_or(LiFiError::Transaction {
-                code: LiFiErrorCode::InternalError,
-                message: "Unable to prepare transaction. Action not found.".to_owned(),
-            })?;
+            let _action = ctx
+                .status_manager
+                .find_action(ctx.step, action_type)
+                .ok_or(LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: "Unable to prepare transaction. Action not found.".to_owned(),
+                })?;
 
-        if ctx.step.transaction_request.is_none() {
-            let old_step = ctx.step.step.clone();
-            let updated_step = ctx.client.get_step_transaction(&old_step).await?;
+            if ctx.step.transaction_request.is_none() {
+                let old_step = ctx.step.step.clone();
+                let updated_step = ctx.client.get_step_transaction(&old_step).await?;
 
-            let accept_hook = ctx
-                .client
-                .execution_state()
-                .get(ctx.route_id)
-                .and_then(|data| {
-                    data.execution_options
-                        .accept_exchange_rate_update_hook
-                        .clone()
+                let accept_hook = ctx
+                    .client
+                    .execution_state()
+                    .get(ctx.route_id)
+                    .and_then(|data| {
+                        data.execution_options
+                            .accept_exchange_rate_update_hook
+                            .clone()
+                    });
+
+                let validated = step_comparison(
+                    &old_step,
+                    updated_step.clone(),
+                    ctx.allow_user_interaction,
+                    accept_hook,
+                )
+                .await?;
+
+                ctx.step.estimate = validated.estimate;
+                ctx.step.transaction_request = updated_step.transaction_request;
+            }
+
+            if ctx
+                .step
+                .transaction_request
+                .as_ref()
+                .and_then(|r| r.data.as_ref())
+                .is_none()
+            {
+                return Err(LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message:
+                        "Unable to prepare transaction. Transaction request data is not found."
+                            .to_owned(),
                 });
+            }
 
-            let validated = step_comparison(
-                &old_step,
-                updated_step.clone(),
-                ctx.allow_user_interaction,
-                accept_hook,
-            )
-            .await?;
+            ctx.status_manager.update_action(
+                ctx.step,
+                action_type,
+                ExecutionActionStatus::ActionRequired,
+                None,
+            )?;
 
-            ctx.step.estimate = validated.estimate;
-            ctx.step.transaction_request = updated_step.transaction_request;
-        }
+            if !ctx.allow_user_interaction {
+                return Ok(TaskStatus::Paused);
+            }
 
-        if ctx
-            .step
-            .transaction_request
-            .as_ref()
-            .and_then(|r| r.data.as_ref())
-            .is_none()
-        {
-            return Err(LiFiError::Transaction {
-                code: LiFiErrorCode::InternalError,
-                message: "Unable to prepare transaction. Transaction request data is not found."
-                    .to_owned(),
-            });
-        }
-
-        ctx.status_manager.update_action(
-            ctx.step,
-            action_type,
-            ExecutionActionStatus::ActionRequired,
-            None,
-        )?;
-
-        if !ctx.allow_user_interaction {
-            return Ok(TaskStatus::Paused);
-        }
-
-        Ok(TaskStatus::Completed)
+            Ok(TaskStatus::Completed)
+        })
     }
 }

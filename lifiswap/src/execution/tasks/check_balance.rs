@@ -4,7 +4,8 @@
 //! queries on-chain balance via the provider, retries up to 3 times on
 //! insufficient balance, and auto-adjusts `fromAmount` within slippage limits.
 
-use async_trait::async_trait;
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::error::{LiFiError, LiFiErrorCode, Result};
 use crate::execution::task::{ExecutionContext, ExecutionTask};
@@ -24,41 +25,45 @@ const BALANCE_RETRY_DELAY_MS: u64 = 200;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CheckBalanceTask;
 
-#[async_trait]
 impl ExecutionTask for CheckBalanceTask {
-    async fn run(&self, ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-        let action_type = if ctx.is_bridge_execution {
-            ExecutionActionType::CrossChain
-        } else {
-            ExecutionActionType::Swap
-        };
+    fn run<'a>(
+        &'a self,
+        ctx: &'a mut ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+        Box::pin(async move {
+            let action_type = if ctx.is_bridge_execution {
+                ExecutionActionType::CrossChain
+            } else {
+                ExecutionActionType::Swap
+            };
 
-        let from_chain_id = ctx.step.action.from_chain_id.0;
+            let from_chain_id = ctx.step.action.from_chain_id.0;
 
-        ctx.status_manager.initialize_action(
-            ctx.step,
-            action_type,
-            from_chain_id,
-            ExecutionActionStatus::Started,
-        )?;
+            ctx.status_manager.initialize_action(
+                ctx.step,
+                action_type,
+                from_chain_id,
+                ExecutionActionStatus::Started,
+            )?;
 
-        let wallet_address = ctx
-            .step
-            .step
-            .action
-            .from_address
-            .as_ref()
-            .ok_or_else(|| LiFiError::Transaction {
-                code: LiFiErrorCode::InternalError,
-                message: "The wallet address is undefined.".to_owned(),
-            })?
-            .clone();
+            let wallet_address = ctx
+                .step
+                .step
+                .action
+                .from_address
+                .as_ref()
+                .ok_or_else(|| LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: "The wallet address is undefined.".to_owned(),
+                })?
+                .clone();
 
-        check_balance(ctx, &wallet_address, 0).await?;
+            check_balance(ctx, &wallet_address, 0).await?;
 
-        tracing::debug!(wallet = %wallet_address, "balance check passed");
+            tracing::debug!(wallet = %wallet_address, "balance check passed");
 
-        Ok(TaskStatus::Completed)
+            Ok(TaskStatus::Completed)
+        })
     }
 }
 

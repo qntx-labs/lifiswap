@@ -27,7 +27,6 @@ url = "2"
 bon = "3"
 backon = { version = "1", features = ["tokio-sleep"] }
 wiremock = "0.6"
-async-trait = "0.1"
 dashmap = "6"
 alloy = { version = "1", features = ["full"] }
 

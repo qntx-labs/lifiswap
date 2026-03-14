@@ -1,11 +1,13 @@
 //! EVM chain provider implementation.
 
+use std::future::Future;
+use std::pin::Pin;
+
 use alloy::network::EthereumWallet;
 use alloy::primitives::Address;
 use alloy::providers::{Provider as AlloyProvider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
-use async_trait::async_trait;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{ChainType, StepExecutorOptions, Token, TokenAmount};
@@ -46,7 +48,6 @@ impl EvmProvider {
     }
 }
 
-#[async_trait]
 impl Provider for EvmProvider {
     fn chain_type(&self) -> ChainType {
         ChainType::EVM
@@ -56,83 +57,95 @@ impl Provider for EvmProvider {
         address.parse::<Address>().is_ok()
     }
 
-    async fn resolve_address(&self, _name: &str, _chain_id: Option<u64>) -> Result<Option<String>> {
-        // ENS resolution could be added here in the future
-        Ok(None)
+    fn resolve_address<'a>(
+        &'a self,
+        _name: &'a str,
+        _chain_id: Option<u64>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
+        Box::pin(async {
+            // ENS resolution could be added here in the future
+            Ok(None)
+        })
     }
 
-    async fn get_balance(
-        &self,
-        wallet_address: &str,
-        tokens: &[Token],
-    ) -> Result<Vec<TokenAmount>> {
-        let addr: Address = wallet_address
-            .parse()
-            .map_err(|_| LiFiError::Validation(format!("Invalid EVM address: {wallet_address}")))?;
-
-        let rpc_url: url::Url = self
-            .rpc_url
-            .parse()
-            .map_err(|e| LiFiError::Config(format!("Invalid RPC URL: {e}")))?;
-        let provider = ProviderBuilder::new().connect_http(rpc_url);
-
-        let native_balance = provider
-            .get_balance(addr)
-            .await
-            .map_err(|e| LiFiError::Provider {
-                code: LiFiErrorCode::ProviderUnavailable,
-                message: format!("Failed to fetch native balance: {e}"),
+    fn get_balance<'a>(
+        &'a self,
+        wallet_address: &'a str,
+        tokens: &'a [Token],
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<TokenAmount>>> + Send + 'a>> {
+        Box::pin(async move {
+            let addr: Address = wallet_address.parse().map_err(|_| {
+                LiFiError::Validation(format!("Invalid EVM address: {wallet_address}"))
             })?;
 
-        let mut results = Vec::with_capacity(tokens.len());
+            let rpc_url: url::Url = self
+                .rpc_url
+                .parse()
+                .map_err(|e| LiFiError::Config(format!("Invalid RPC URL: {e}")))?;
+            let provider = ProviderBuilder::new().connect_http(rpc_url);
 
-        for token in tokens {
-            let is_native = token.address == "0x0000000000000000000000000000000000000000"
-                || token.address.to_lowercase() == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+            let native_balance =
+                provider
+                    .get_balance(addr)
+                    .await
+                    .map_err(|e| LiFiError::Provider {
+                        code: LiFiErrorCode::ProviderUnavailable,
+                        message: format!("Failed to fetch native balance: {e}"),
+                    })?;
 
-            let amount = if is_native {
-                Some(native_balance.to_string())
-            } else {
-                match token.address.parse::<Address>() {
-                    Ok(token_addr) => {
-                        let contract = IERC20Balance::new(token_addr, &provider);
-                        match contract.balanceOf(addr).call().await {
-                            Ok(bal) => Some(bal.to_string()),
-                            Err(e) => {
-                                tracing::warn!(
-                                    token = %token.symbol,
-                                    address = %token.address,
-                                    error = %e,
-                                    "failed to query ERC-20 balance, skipping"
-                                );
-                                None
+            let mut results = Vec::with_capacity(tokens.len());
+
+            for token in tokens {
+                let is_native = token.address == "0x0000000000000000000000000000000000000000"
+                    || token.address.to_lowercase() == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+                let amount = if is_native {
+                    Some(native_balance.to_string())
+                } else {
+                    match token.address.parse::<Address>() {
+                        Ok(token_addr) => {
+                            let contract = IERC20Balance::new(token_addr, &provider);
+                            match contract.balanceOf(addr).call().await {
+                                Ok(bal) => Some(bal.to_string()),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        token = %token.symbol,
+                                        address = %token.address,
+                                        error = %e,
+                                        "failed to query ERC-20 balance, skipping"
+                                    );
+                                    None
+                                }
                             }
                         }
+                        Err(_) => None,
                     }
-                    Err(_) => None,
-                }
-            };
+                };
 
-            results.push(TokenAmount {
-                token: token.clone(),
-                amount,
-                block_number: None,
-            });
-        }
+                results.push(TokenAmount {
+                    token: token.clone(),
+                    amount,
+                    block_number: None,
+                });
+            }
 
-        Ok(results)
+            Ok(results)
+        })
     }
 
-    async fn create_step_executor(
-        &self,
+    fn create_step_executor<'a>(
+        &'a self,
         options: StepExecutorOptions,
-    ) -> Result<Box<dyn StepExecutor>> {
-        let wallet = EthereumWallet::from(self.signer.clone());
+    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn StepExecutor>>> + Send + 'a>> {
+        Box::pin(async move {
+            let wallet = EthereumWallet::from(self.signer.clone());
 
-        Ok(Box::new(EvmStepExecutor::new(
-            wallet,
-            self.rpc_url.clone(),
-            options,
-        )))
+            let executor: Box<dyn StepExecutor> = Box::new(EvmStepExecutor::new(
+                wallet,
+                self.rpc_url.clone(),
+                options,
+            ));
+            Ok(executor)
+        })
     }
 }

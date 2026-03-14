@@ -1,7 +1,9 @@
 //! EVM step executor — orchestrates the EVM task pipeline.
 
+use std::future::Future;
+use std::pin::Pin;
+
 use alloy::network::EthereumWallet;
-use async_trait::async_trait;
 use lifiswap::LiFiClient;
 use lifiswap::error::Result;
 use lifiswap::execution::status::StatusManager;
@@ -79,37 +81,38 @@ impl EvmStepExecutor {
     }
 }
 
-#[async_trait]
 impl StepExecutor for EvmStepExecutor {
-    async fn execute_step(
-        &mut self,
-        client: &LiFiClient,
-        step: &mut LiFiStepExtended,
-        provider: &dyn Provider,
-    ) -> Result<()> {
-        let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
+    fn execute_step<'a>(
+        &'a mut self,
+        client: &'a LiFiClient,
+        step: &'a mut LiFiStepExtended,
+        provider: &'a dyn Provider,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
 
-        let status_manager = StatusManager::new(
-            self.options.route_id.clone(),
-            client.execution_state().clone(),
-        );
-        status_manager.initialize_execution(step);
+            let status_manager = StatusManager::new(
+                self.options.route_id.clone(),
+                client.execution_state().clone(),
+            );
+            status_manager.initialize_execution(step);
 
-        let pipeline = self.build_pipeline(is_bridge);
+            let pipeline = self.build_pipeline(is_bridge);
 
-        let mut ctx = ExecutionContext {
-            client,
-            step,
-            status_manager: &status_manager,
-            provider,
-            route_id: &self.options.route_id,
-            is_bridge_execution: is_bridge,
-            allow_user_interaction: self.interaction.allow_interaction,
-        };
+            let mut ctx = ExecutionContext {
+                client,
+                step,
+                status_manager: &status_manager,
+                provider,
+                route_id: &self.options.route_id,
+                is_bridge_execution: is_bridge,
+                allow_user_interaction: self.interaction.allow_interaction,
+            };
 
-        pipeline.run(&mut ctx).await?;
+            pipeline.run(&mut ctx).await?;
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn set_interaction(&mut self, settings: InteractionSettings) {

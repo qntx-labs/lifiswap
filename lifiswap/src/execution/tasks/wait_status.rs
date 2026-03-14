@@ -3,7 +3,8 @@
 //! During polling, intermediate `PENDING` substatus updates are propagated
 //! to the action via [`StatusManager`], matching the `TypeScript` SDK behavior.
 
-use async_trait::async_trait;
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::error::{LiFiError, LiFiErrorCode, Result};
 use crate::execution::messages::get_substatus_message;
@@ -43,87 +44,91 @@ impl WaitForTransactionStatusTask {
     }
 }
 
-#[async_trait]
 impl ExecutionTask for WaitForTransactionStatusTask {
-    async fn run(&self, ctx: &mut ExecutionContext<'_>) -> Result<TaskStatus> {
-        let swap_action_type = if ctx.is_bridge_execution {
-            ExecutionActionType::CrossChain
-        } else {
-            ExecutionActionType::Swap
-        };
+    fn run<'a>(
+        &'a self,
+        ctx: &'a mut ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+        Box::pin(async move {
+            let swap_action_type = if ctx.is_bridge_execution {
+                ExecutionActionType::CrossChain
+            } else {
+                ExecutionActionType::Swap
+            };
 
-        let tx_hash = ctx
-            .status_manager
-            .find_action(ctx.step, swap_action_type)
-            .and_then(|a| a.tx_hash.as_ref().or(a.task_id.as_ref()))
-            .cloned()
-            .ok_or_else(|| LiFiError::Transaction {
-                code: LiFiErrorCode::InternalError,
-                message: "Transaction hash is undefined.".to_owned(),
-            })?;
+            let tx_hash = ctx
+                .status_manager
+                .find_action(ctx.step, swap_action_type)
+                .and_then(|a| a.tx_hash.as_ref().or(a.task_id.as_ref()))
+                .cloned()
+                .ok_or_else(|| LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: "Transaction hash is undefined.".to_owned(),
+                })?;
 
-        let from_chain_id = ctx.step.action.from_chain_id.0;
-        let to_chain_id = ctx.step.action.to_chain_id.0;
+            let from_chain_id = ctx.step.action.from_chain_id.0;
+            let to_chain_id = ctx.step.action.to_chain_id.0;
 
-        let chain_id = if self.action_type == ExecutionActionType::ReceivingChain {
-            to_chain_id
-        } else {
-            from_chain_id
-        };
+            let chain_id = if self.action_type == ExecutionActionType::ReceivingChain {
+                to_chain_id
+            } else {
+                from_chain_id
+            };
 
-        ctx.status_manager.initialize_action(
-            ctx.step,
-            self.action_type,
-            chain_id,
-            ExecutionActionStatus::Pending,
-        )?;
+            ctx.status_manager.initialize_action(
+                ctx.step,
+                self.action_type,
+                chain_id,
+                ExecutionActionStatus::Pending,
+            )?;
 
-        let status_response = poll_transaction_status(
-            ctx.client,
-            ctx.status_manager,
-            ctx.step,
-            self.action_type,
-            &tx_hash,
-        )
-        .await?;
+            let status_response = poll_transaction_status(
+                ctx.client,
+                ctx.status_manager,
+                ctx.step,
+                self.action_type,
+                &tx_hash,
+            )
+            .await?;
 
-        ctx.status_manager.update_action(
-            ctx.step,
-            self.action_type,
-            ExecutionActionStatus::Done,
-            Some(crate::execution::status::ActionUpdateParams {
-                chain_id: Some(to_chain_id),
-                tx_hash: status_response
-                    .receiving
-                    .as_ref()
-                    .and_then(|r| r.tx_hash.clone()),
-                tx_link: status_response
-                    .receiving
-                    .as_ref()
-                    .and_then(|r| r.tx_link.clone()),
-                substatus: status_response.substatus.clone(),
-                substatus_message: status_response.substatus_message.clone(),
-                ..Default::default()
-            }),
-        )?;
+            ctx.status_manager.update_action(
+                ctx.step,
+                self.action_type,
+                ExecutionActionStatus::Done,
+                Some(crate::execution::status::ActionUpdateParams {
+                    chain_id: Some(to_chain_id),
+                    tx_hash: status_response
+                        .receiving
+                        .as_ref()
+                        .and_then(|r| r.tx_hash.clone()),
+                    tx_link: status_response
+                        .receiving
+                        .as_ref()
+                        .and_then(|r| r.tx_link.clone()),
+                    substatus: status_response.substatus.clone(),
+                    substatus_message: status_response.substatus_message.clone(),
+                    ..Default::default()
+                }),
+            )?;
 
-        ctx.status_manager.update_execution(
-            ctx.step,
-            ExecutionUpdate {
-                status: Some(ExecutionStatus::Done),
-                from_amount: status_response
-                    .sending
-                    .as_ref()
-                    .and_then(|s| s.amount.clone()),
-                to_amount: status_response
-                    .receiving
-                    .as_ref()
-                    .and_then(|r| r.amount.clone()),
-                ..Default::default()
-            },
-        );
+            ctx.status_manager.update_execution(
+                ctx.step,
+                ExecutionUpdate {
+                    status: Some(ExecutionStatus::Done),
+                    from_amount: status_response
+                        .sending
+                        .as_ref()
+                        .and_then(|s| s.amount.clone()),
+                    to_amount: status_response
+                        .receiving
+                        .as_ref()
+                        .and_then(|r| r.amount.clone()),
+                    ..Default::default()
+                },
+            );
 
-        Ok(TaskStatus::Completed)
+            Ok(TaskStatus::Completed)
+        })
     }
 }
 

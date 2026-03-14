@@ -21,7 +21,6 @@ tracing = { workspace = true }
 url = { workspace = true }
 bon = { workspace = true }
 backon = { workspace = true }
-async-trait = { workspace = true }
 dashmap = { workspace = true }
 
 [dev-dependencies]

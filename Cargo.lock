@@ -2616,7 +2616,6 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 name = "lifiswap"
 version = "0.2.0"
 dependencies = [
- "async-trait",
  "backon",
  "bon",
  "dashmap",
@@ -2646,7 +2645,6 @@ name = "lifiswap-evm"
 version = "0.2.0"
 dependencies = [
  "alloy",
- "async-trait",
  "lifiswap",
  "tokio",
  "tracing",
