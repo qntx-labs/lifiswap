@@ -292,6 +292,113 @@ async fn with_custom_http_client() {
 }
 
 #[tokio::test]
+async fn get_wallet_balances_success() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/wallets/0x1234567890abcdef/balances"))
+        .and(query_param("extended", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "balances": {
+                "1": [
+                    {
+                        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                        "decimals": 6,
+                        "symbol": "USDC",
+                        "chainId": 1,
+                        "name": "USD Coin",
+                        "amount": "1000000",
+                        "blockNumber": 19000000
+                    }
+                ],
+                "137": []
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = test_client(&server.uri());
+    let balances = client
+        .get_wallet_balances("0x1234567890abcdef")
+        .await
+        .expect("get_wallet_balances failed");
+
+    assert_eq!(balances.len(), 2);
+    let eth_tokens = balances.get(&1).expect("chain 1 missing");
+    assert_eq!(eth_tokens.len(), 1);
+    assert_eq!(eth_tokens[0].symbol, "USDC");
+    assert_eq!(eth_tokens[0].amount.as_deref(), Some("1000000"));
+}
+
+#[tokio::test]
+async fn get_wallet_balances_empty_address_validation() {
+    let server = MockServer::start().await;
+    let client = test_client(&server.uri());
+    let err = client.get_wallet_balances("").await.unwrap_err();
+
+    match &err {
+        lifiswap::error::LiFiError::Validation(msg) => {
+            assert!(msg.contains("walletAddress"));
+        }
+        other => panic!("expected Validation error, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn patch_contract_calls_success() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/patcher"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {
+                "target": "0xContractAddress",
+                "value": "0",
+                "callData": "0xpatched",
+                "allowFailure": false,
+                "isDelegateCall": false
+            }
+        ])))
+        .mount(&server)
+        .await;
+
+    let client = test_client(&server.uri());
+    let entries = vec![lifiswap::types::PatchCallDataEntry::builder()
+        .chain_id(lifiswap::types::ChainId(1))
+        .from_token_address("0xTokenAddress")
+        .target_contract_address("0xContractAddress")
+        .call_data_to_patch("0xoriginal")
+        .patches(vec![lifiswap::types::CallDataPatch::builder()
+            .amount_to_replace("1000000")
+            .build()])
+        .build()];
+
+    let result = client
+        .patch_contract_calls(&entries)
+        .await
+        .expect("patch_contract_calls failed");
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].target, "0xContractAddress");
+    assert_eq!(result[0].call_data, "0xpatched");
+    assert!(!result[0].allow_failure);
+}
+
+#[tokio::test]
+async fn patch_contract_calls_empty_entries_validation() {
+    let server = MockServer::start().await;
+    let client = test_client(&server.uri());
+    let err = client.patch_contract_calls(&[]).await.unwrap_err();
+
+    match &err {
+        lifiswap::error::LiFiError::Validation(msg) => {
+            assert!(msg.contains("patch entry"));
+        }
+        other => panic!("expected Validation error, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn client_is_clone_and_send() {
     let server = MockServer::start().await;
 
