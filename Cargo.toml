@@ -26,6 +26,7 @@ tracing = "0.1"
 url = "2"
 bon = "3"
 backon = { version = "1", features = ["tokio-sleep"] }
+wiremock = "0.6"
 
 [profile.release]
 codegen-units = 1
