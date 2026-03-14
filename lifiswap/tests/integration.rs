@@ -531,6 +531,76 @@ async fn quote_request_overrides_config_defaults() {
 }
 
 #[tokio::test]
+async fn api_key_header_is_sent() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/chains"))
+        .and(wiremock::matchers::header("x-lifi-api-key", "sk-test-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "chains": []
+        })))
+        .mount(&server)
+        .await;
+
+    let client = LiFiClient::new(
+        LiFiConfig::builder()
+            .integrator("test")
+            .api_url(server.uri())
+            .api_key("sk-test-key")
+            .retry(RetryConfig::builder().max_retries(0).build())
+            .build(),
+    )
+    .expect("client");
+
+    let chains = client.get_chains(None).await.expect("request failed");
+    assert!(chains.is_empty());
+}
+
+#[tokio::test]
+async fn routes_merges_config_route_options() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/advanced/routes"))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "options": {
+                "slippage": 0.005
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "routes": []
+        })))
+        .mount(&server)
+        .await;
+
+    let client = LiFiClient::new(
+        LiFiConfig::builder()
+            .integrator("test")
+            .api_url(server.uri())
+            .retry(RetryConfig::builder().max_retries(0).build())
+            .route_options(
+                lifiswap::types::RouteOptions::builder()
+                    .slippage(0.005)
+                    .build(),
+            )
+            .build(),
+    )
+    .expect("client");
+
+    let req = lifiswap::types::RoutesRequest::builder()
+        .from_chain_id(lifiswap::types::ChainId(1))
+        .to_chain_id(lifiswap::types::ChainId(137))
+        .from_token_address("0xUSDC")
+        .to_token_address("0xUSDC_POL")
+        .from_amount("1000000")
+        .build();
+
+    let resp = client.get_routes(&req).await.expect("get_routes failed");
+    assert!(resp.routes.is_empty());
+}
+
+#[tokio::test]
 async fn client_is_clone_and_send() {
     let server = MockServer::start().await;
 
