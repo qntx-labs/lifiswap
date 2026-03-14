@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Request parameters for fetching available tools.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolsRequest {
     /// Filter by chain IDs.

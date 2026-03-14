@@ -2,7 +2,6 @@
 
 use crate::client::LiFiClient;
 use crate::error::{LiFiError, Result};
-use crate::http;
 use crate::types::{StatusRequest, StatusResponse};
 
 impl LiFiClient {
@@ -22,29 +21,6 @@ impl LiFiClient {
             ));
         }
 
-        let cfg = self.http_config();
-        let mut query: Vec<(&str, String)> = Vec::new();
-
-        if let Some(ref h) = params.tx_hash {
-            query.push(("txHash", h.clone()));
-        }
-        if let Some(ref t) = params.task_id {
-            query.push(("taskId", t.clone()));
-        }
-        if let Some(ref b) = params.bridge {
-            query.push(("bridge", b.clone()));
-        }
-        if let Some(ref fc) = params.from_chain {
-            query.push(("fromChain", fc.to_string()));
-        }
-        if let Some(ref tc) = params.to_chain {
-            query.push(("toChain", tc.to_string()));
-        }
-
-        let base = url::Url::parse(&format!("{}/status", cfg.api_url))?;
-        let pairs: Vec<(&str, &str)> = query.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        let url = url::Url::parse_with_params(base.as_str(), &pairs)?;
-
-        http::get(&self.http, &cfg, url.as_str()).await
+        self.get("/status", params).await
     }
 }

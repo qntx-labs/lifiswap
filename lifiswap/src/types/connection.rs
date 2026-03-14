@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::{ChainId, Token};
 
 /// Request parameters for getting connections.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionsRequest {
     /// Source chain ID.
@@ -13,12 +13,14 @@ pub struct ConnectionsRequest {
     pub from_chain: Option<ChainId>,
     /// Source token address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub from_token: Option<String>,
     /// Destination chain ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_chain: Option<ChainId>,
     /// Destination token address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub to_token: Option<String>,
     /// Allowed bridge keys.
     #[serde(default, skip_serializing_if = "Option::is_none")]

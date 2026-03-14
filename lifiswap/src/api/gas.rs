@@ -2,7 +2,6 @@
 
 use crate::client::LiFiClient;
 use crate::error::Result;
-use crate::http;
 use crate::types::{GasRecommendationRequest, GasRecommendationResponse};
 
 impl LiFiClient {
@@ -16,10 +15,10 @@ impl LiFiClient {
         &self,
         params: &GasRecommendationRequest,
     ) -> Result<GasRecommendationResponse> {
-        let cfg = self.http_config();
         let mut url = url::Url::parse(&format!(
             "{}/gas/suggestion/{}",
-            cfg.api_url, params.chain_id
+            self.api_url(),
+            params.chain_id
         ))?;
 
         {
@@ -32,6 +31,6 @@ impl LiFiClient {
             }
         }
 
-        http::get(&self.http, &cfg, url.as_str()).await
+        self.get_url(&url).await
     }
 }

@@ -5,17 +5,20 @@ use serde::{Deserialize, Serialize};
 use super::{ChainId, Token};
 
 /// Request parameters for checking transfer status.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusRequest {
     /// Transaction hash to look up.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub tx_hash: Option<String>,
     /// Task ID (for relay transactions).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub task_id: Option<String>,
     /// Bridge used for the transfer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub bridge: Option<String>,
     /// Source chain ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]

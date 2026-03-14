@@ -1,163 +1,182 @@
 //! `LiFi` SDK client and configuration.
 //!
 //! The [`LiFiClient`] is the main entry point for interacting with the `LiFi` API.
-//! Use [`LiFiClientBuilder`] (via [`LiFiClient::builder`]) to construct a configured client.
+//! Construct one via [`LiFiClient::new`] (using [`LiFiConfig::builder`]).
 //!
 //! # Example
 //!
 //! ```no_run
-//! use lifiswap::{LiFiClient, types::ChainsRequest};
+//! use lifiswap::LiFiClient;
+//! use lifiswap::client::LiFiConfig;
 //!
 //! # async fn example() -> lifiswap::error::Result<()> {
-//! let client = LiFiClient::builder()
-//!     .integrator("my-app")
-//!     .build()?;
+//! let client = LiFiClient::new(
+//!     LiFiConfig::builder()
+//!         .integrator("my-app")
+//!         .build(),
+//! )?;
 //!
 //! let chains = client.get_chains(None).await?;
 //! # Ok(())
 //! # }
 //! ```
 
-use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::error::{LiFiError, Result};
-use crate::http::{DEFAULT_API_URL, HttpConfig};
-use crate::types::{ChainId, RouteOptions};
+use crate::types::RouteOptions;
 
-/// Configuration for the `LiFi` SDK client.
-#[derive(Debug, Clone)]
+/// SDK version sent in the `x-lifi-sdk` header.
+const SDK_VERSION: &str = concat!("lifiswap-rs/", env!("CARGO_PKG_VERSION"));
+
+/// Default API base URL.
+pub const DEFAULT_API_URL: &str = "https://li.quest/v1";
+
+/// Retry configuration for transient failures.
+///
+/// Uses exponential backoff with optional jitter via [`backon`].
+#[derive(Debug, Clone, bon::Builder)]
+#[non_exhaustive]
+pub struct RetryConfig {
+    /// Maximum number of retry attempts (default: 3).
+    #[builder(default = 3)]
+    pub max_retries: usize,
+    /// Minimum delay between retries (default: 300ms).
+    #[builder(default = Duration::from_millis(300))]
+    pub min_delay: Duration,
+    /// Maximum delay cap (default: 10s).
+    #[builder(default = Duration::from_secs(10))]
+    pub max_delay: Duration,
+    /// Whether to add jitter to delays (default: true).
+    #[builder(default = true)]
+    pub jitter: bool,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            min_delay: Duration::from_millis(300),
+            max_delay: Duration::from_secs(10),
+            jitter: true,
+        }
+    }
+}
+
+/// `LiFi` SDK client configuration.
+///
+/// Use [`LiFiConfig::builder()`] for ergonomic construction:
+///
+/// ```
+/// use lifiswap::client::LiFiConfig;
+///
+/// let config = LiFiConfig::builder()
+///     .integrator("my-app")
+///     .api_key("sk-...")
+///     .build();
+/// ```
+#[derive(Debug, Clone, bon::Builder)]
+#[non_exhaustive]
 pub struct LiFiConfig {
-    /// `LiFi` API base URL (default: `https://li.quest/v1`).
-    pub api_url: String,
-    /// Optional API key for authentication.
-    pub api_key: Option<String>,
-    /// Integrator identifier (required by the `LiFi` API).
+    /// Integrator identifier (**required** by the `LiFi` API).
+    #[builder(into)]
     pub integrator: String,
-    /// Optional user identifier.
+    /// API base URL (default: `https://li.quest/v1`).
+    #[builder(into, default = DEFAULT_API_URL.to_owned())]
+    pub api_url: String,
+    /// Optional API key for authenticated endpoints.
+    #[builder(into)]
+    pub api_key: Option<String>,
+    /// Optional user identifier sent with requests.
+    #[builder(into)]
     pub user_id: Option<String>,
     /// Default route options applied to quote/route requests.
     pub route_options: Option<RouteOptions>,
-    /// Custom RPC URLs per chain.
-    pub rpc_urls: HashMap<ChainId, Vec<String>>,
+    /// Retry policy for transient failures.
+    #[builder(default)]
+    pub retry: RetryConfig,
+    /// Per-request timeout (default: 30s).
+    #[builder(default = Duration::from_secs(30))]
+    pub timeout: Duration,
 }
 
-/// Builder for constructing a [`LiFiClient`] with desired configuration.
-#[derive(Debug, Default)]
-pub struct LiFiClientBuilder {
-    api_url: Option<String>,
-    api_key: Option<String>,
-    integrator: Option<String>,
-    user_id: Option<String>,
-    route_options: Option<RouteOptions>,
-    rpc_urls: HashMap<ChainId, Vec<String>>,
+/// Shared inner state behind `Arc`.
+#[derive(Debug)]
+pub(crate) struct ClientInner {
+    pub(crate) config: LiFiConfig,
+    pub(crate) http: reqwest::Client,
 }
 
-impl LiFiClientBuilder {
-    /// Set the API base URL (default: `https://li.quest/v1`).
-    #[must_use]
-    pub fn api_url(mut self, url: impl Into<String>) -> Self {
-        self.api_url = Some(url.into());
-        self
-    }
-
-    /// Set the API key for authentication.
-    #[must_use]
-    pub fn api_key(mut self, key: impl Into<String>) -> Self {
-        self.api_key = Some(key.into());
-        self
-    }
-
-    /// Set the integrator identifier (required).
-    #[must_use]
-    pub fn integrator(mut self, integrator: impl Into<String>) -> Self {
-        self.integrator = Some(integrator.into());
-        self
-    }
-
-    /// Set a user identifier sent with requests.
-    #[must_use]
-    pub fn user_id(mut self, id: impl Into<String>) -> Self {
-        self.user_id = Some(id.into());
-        self
-    }
-
-    /// Set default route options.
-    #[must_use]
-    pub fn route_options(mut self, opts: RouteOptions) -> Self {
-        self.route_options = Some(opts);
-        self
-    }
-
-    /// Add a custom RPC URL for a chain.
-    #[must_use]
-    pub fn rpc_url(mut self, chain_id: impl Into<ChainId>, url: impl Into<String>) -> Self {
-        self.rpc_urls
-            .entry(chain_id.into())
-            .or_default()
-            .push(url.into());
-        self
-    }
-
-    /// Build the [`LiFiClient`].
-    ///
-    /// # Errors
-    ///
-    /// Returns [`LiFiError::Config`] if the `integrator` field is not set.
-    pub fn build(self) -> Result<LiFiClient> {
-        let integrator = self.integrator.ok_or_else(|| {
-            LiFiError::Config("integrator is required — call .integrator(\"your-app\")".into())
-        })?;
-
-        let config = LiFiConfig {
-            api_url: self.api_url.unwrap_or_else(|| DEFAULT_API_URL.to_owned()),
-            api_key: self.api_key,
-            integrator,
-            user_id: self.user_id,
-            route_options: self.route_options,
-            rpc_urls: self.rpc_urls,
-        };
-
-        let http_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(LiFiError::Network)?;
-
-        Ok(LiFiClient {
-            config,
-            http: http_client,
-        })
+impl ClientInner {
+    /// Build a [`backon::ExponentialBuilder`] from the retry config.
+    pub(crate) fn backoff(&self) -> backon::ExponentialBuilder {
+        let mut b = backon::ExponentialBuilder::default()
+            .with_min_delay(self.config.retry.min_delay)
+            .with_max_delay(self.config.retry.max_delay)
+            .with_max_times(self.config.retry.max_retries);
+        if self.config.retry.jitter {
+            b = b.with_jitter();
+        }
+        b
     }
 }
 
 /// The `LiFi` SDK client.
 ///
-/// Provides methods for all `LiFi` REST API endpoints. Thread-safe and cloneable.
+/// Cheaply cloneable (`Arc`-backed). Thread-safe (`Send + Sync`).
+/// Provides methods for all `LiFi` REST API endpoints.
 #[derive(Debug, Clone)]
 pub struct LiFiClient {
-    pub(crate) config: LiFiConfig,
-    pub(crate) http: reqwest::Client,
+    pub(crate) inner: Arc<ClientInner>,
 }
 
 impl LiFiClient {
-    /// Create a new [`LiFiClientBuilder`].
-    #[must_use]
-    pub fn builder() -> LiFiClientBuilder {
-        LiFiClientBuilder::default()
+    /// Create a new client from a [`LiFiConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LiFiError::Network`] if the underlying HTTP client fails to initialize.
+    pub fn new(config: LiFiConfig) -> Result<Self> {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-lifi-sdk", HeaderValue::from_static(SDK_VERSION));
+        if let Ok(v) = HeaderValue::from_str(&config.integrator) {
+            headers.insert("x-lifi-integrator", v);
+        }
+        if let Some(ref key) = config.api_key
+            && let Ok(v) = HeaderValue::from_str(key)
+        {
+            headers.insert("x-lifi-api-key", v);
+        }
+        if let Some(ref uid) = config.user_id
+            && let Ok(v) = HeaderValue::from_str(uid)
+        {
+            headers.insert("x-lifi-userid", v);
+        }
+
+        let http = reqwest::Client::builder()
+            .default_headers(headers)
+            .timeout(config.timeout)
+            .pool_max_idle_per_host(20)
+            .build()
+            .map_err(LiFiError::Network)?;
+
+        Ok(Self {
+            inner: Arc::new(ClientInner { config, http }),
+        })
     }
 
     /// Returns a reference to the current configuration.
     #[must_use]
-    pub const fn config(&self) -> &LiFiConfig {
-        &self.config
+    pub fn config(&self) -> &LiFiConfig {
+        &self.inner.config
     }
 
-    /// Returns the internal [`HttpConfig`] used for requests.
-    pub(crate) fn http_config(&self) -> HttpConfig {
-        HttpConfig {
-            api_url: self.config.api_url.clone(),
-            integrator: self.config.integrator.clone(),
-            api_key: self.config.api_key.clone(),
-            user_id: self.config.user_id.clone(),
-        }
+    /// Returns the API base URL.
+    #[must_use]
+    pub fn api_url(&self) -> &str {
+        &self.inner.config.api_url
     }
 }

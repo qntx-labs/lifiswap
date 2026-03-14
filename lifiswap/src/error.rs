@@ -150,5 +150,20 @@ pub enum LiFiError {
     Config(String),
 }
 
+impl LiFiError {
+    /// Whether this error is transient and the request should be retried.
+    ///
+    /// Returns `true` for server errors (5xx), rate limits (429), and
+    /// network-level failures that are likely transient.
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Http(details) => matches!(details.status, 429 | 500..=599),
+            Self::Network(e) => e.is_timeout() || e.is_connect(),
+            _ => false,
+        }
+    }
+}
+
 /// A type alias for `Result` with [`LiFiError`].
 pub type Result<T> = std::result::Result<T, LiFiError>;

@@ -19,11 +19,13 @@ lifiswap-sui = { version = "0.1", path = "lifiswap-sui" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 thiserror = "2"
 tracing = "0.1"
 url = "2"
+bon = "3"
+backon = { version = "1", features = ["tokio-sleep"] }
 
 [profile.release]
 codegen-units = 1

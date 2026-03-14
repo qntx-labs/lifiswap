@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::ChainId;
 
 /// Request parameters for relaying a signed transaction.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct RelayRequest {
     /// Signed EIP-712 typed data payloads.
@@ -41,10 +41,11 @@ pub struct RelayResponseData {
 }
 
 /// Request for checking relayed transaction status.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct RelayStatusRequest {
     /// Task ID to look up.
+    #[builder(into)]
     pub task_id: String,
 }
 
@@ -80,10 +81,11 @@ pub struct RelayStatusResponseData {
 }
 
 /// Transaction analytics request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionAnalyticsRequest {
     /// Wallet address.
+    #[builder(into)]
     pub wallet: String,
     /// Source chain ID filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]

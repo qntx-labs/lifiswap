@@ -120,7 +120,7 @@ pub struct WalletTokenExtended {
 }
 
 /// Request parameters for fetching tokens.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct TokensRequest {
     /// Filter by chain IDs.

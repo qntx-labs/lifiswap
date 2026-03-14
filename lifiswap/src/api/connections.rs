@@ -2,7 +2,6 @@
 
 use crate::client::LiFiClient;
 use crate::error::Result;
-use crate::http;
 use crate::types::{ConnectionsRequest, ConnectionsResponse};
 
 impl LiFiClient {
@@ -15,8 +14,7 @@ impl LiFiClient {
         &self,
         params: &ConnectionsRequest,
     ) -> Result<ConnectionsResponse> {
-        let cfg = self.http_config();
-        let mut url = url::Url::parse(&format!("{}/connections", cfg.api_url))?;
+        let mut url = url::Url::parse(&format!("{}/connections", self.api_url()))?;
 
         {
             let mut qs = url.query_pairs_mut();
@@ -64,6 +62,6 @@ impl LiFiClient {
             }
         }
 
-        http::get(&self.http, &cfg, url.as_str()).await
+        self.get_url(&url).await
     }
 }

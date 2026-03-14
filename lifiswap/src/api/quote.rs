@@ -2,7 +2,6 @@
 
 use crate::client::LiFiClient;
 use crate::error::{LiFiError, Result};
-use crate::http;
 use crate::types::{ContractCallsQuoteRequest, LiFiStep, QuoteRequest, QuoteToAmountRequest};
 
 impl LiFiClient {
@@ -34,7 +33,9 @@ impl LiFiClient {
             ));
         }
 
-        let cfg = self.http_config();
+        let integrator = &self.inner.config.integrator;
+        let integrator_val = params.integrator.as_deref().unwrap_or(integrator);
+
         let mut query = vec![
             ("fromChain", params.from_chain.as_str()),
             ("fromToken", params.from_token.as_str()),
@@ -42,10 +43,8 @@ impl LiFiClient {
             ("fromAmount", params.from_amount.as_str()),
             ("toChain", params.to_chain.as_str()),
             ("toToken", params.to_token.as_str()),
+            ("integrator", integrator_val),
         ];
-
-        let integrator_val = params.integrator.as_deref().unwrap_or(&cfg.integrator);
-        query.push(("integrator", integrator_val));
 
         if let Some(ref addr) = params.to_address {
             query.push(("toAddress", addr.as_str()));
@@ -67,10 +66,10 @@ impl LiFiClient {
             query.push(("referrer", r.as_str()));
         }
 
-        let base = url::Url::parse(&format!("{}/quote", cfg.api_url))?;
+        let base = url::Url::parse(&format!("{}/quote", self.api_url()))?;
         let url = url::Url::parse_with_params(base.as_str(), &query)?;
 
-        http::get(&self.http, &cfg, url.as_str()).await
+        self.get_url(&url).await
     }
 
     /// Get a quote for a token transfer using `toAmount` (reverse quote).
@@ -79,8 +78,8 @@ impl LiFiClient {
     ///
     /// Returns [`LiFiError`] on validation, network, or API errors.
     pub async fn get_quote_to_amount(&self, params: &QuoteToAmountRequest) -> Result<LiFiStep> {
-        let cfg = self.http_config();
-        let integrator_val = params.integrator.as_deref().unwrap_or(&cfg.integrator);
+        let integrator = &self.inner.config.integrator;
+        let integrator_val = params.integrator.as_deref().unwrap_or(integrator);
 
         let mut query = vec![
             ("fromChain", params.from_chain.as_str()),
@@ -98,10 +97,10 @@ impl LiFiClient {
             query.push(("slippage", &slippage_str));
         }
 
-        let base = url::Url::parse(&format!("{}/quote/toAmount", cfg.api_url))?;
+        let base = url::Url::parse(&format!("{}/quote/toAmount", self.api_url()))?;
         let url = url::Url::parse_with_params(base.as_str(), &query)?;
 
-        http::get(&self.http, &cfg, url.as_str()).await
+        self.get_url(&url).await
     }
 
     /// Get a quote for a destination contract call.
@@ -124,8 +123,6 @@ impl LiFiClient {
             ));
         }
 
-        let cfg = self.http_config();
-        let url = format!("{}/quote/contractCalls", cfg.api_url);
-        http::post(&self.http, &cfg, &url, params).await
+        self.post("/quote/contractCalls", params).await
     }
 }

@@ -78,7 +78,7 @@ pub struct Chain {
 pub type ExtendedChain = Chain;
 
 /// Request parameters for fetching chains.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainsRequest {
     /// Filter by chain types.

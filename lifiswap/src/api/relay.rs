@@ -1,8 +1,7 @@
-//! Relay endpoints (`POST /relayer/relay`, `POST /advanced/relay`, `GET /relayer/quote`).
+//! Relay endpoints (`POST /advanced/relay`, `GET /relayer/quote`, `GET /relayer/status`).
 
 use crate::client::LiFiClient;
 use crate::error::{LiFiError, Result};
-use crate::http;
 use crate::types::{
     LiFiStep, QuoteRequest, RelayRequest, RelayResponse, RelayResponseData, RelayStatusRequest,
     RelayStatusResponse, RelayStatusResponseData, TransactionAnalyticsRequest,
@@ -16,9 +15,8 @@ impl LiFiClient {
     ///
     /// Returns [`LiFiError`] on network or API errors.
     pub async fn get_relayer_quote(&self, params: &QuoteRequest) -> Result<LiFiStep> {
-        let cfg = self.http_config();
-
-        let integrator_val = params.integrator.as_deref().unwrap_or(&cfg.integrator);
+        let integrator = &self.inner.config.integrator;
+        let integrator_val = params.integrator.as_deref().unwrap_or(integrator);
 
         let mut query = vec![
             ("fromChain", params.from_chain.as_str()),
@@ -40,10 +38,10 @@ impl LiFiClient {
             query.push(("referrer", r.as_str()));
         }
 
-        let base = url::Url::parse(&format!("{}/relayer/quote", cfg.api_url))?;
+        let base = url::Url::parse(&format!("{}/relayer/quote", self.api_url()))?;
         let url = url::Url::parse_with_params(base.as_str(), &query)?;
 
-        let resp: serde_json::Value = http::get(&self.http, &cfg, url.as_str()).await?;
+        let resp: serde_json::Value = self.get_url(&url).await?;
 
         if resp.get("status").and_then(serde_json::Value::as_str) == Some("error") {
             let code = resp
@@ -76,9 +74,7 @@ impl LiFiClient {
             ));
         }
 
-        let cfg = self.http_config();
-        let url = format!("{}/advanced/relay", cfg.api_url);
-        let resp: RelayResponse = http::post(&self.http, &cfg, &url, params).await?;
+        let resp: RelayResponse = self.post("/advanced/relay", params).await?;
 
         if resp.status == "error" {
             return Err(LiFiError::Server {
@@ -99,12 +95,9 @@ impl LiFiClient {
         &self,
         params: &RelayStatusRequest,
     ) -> Result<RelayStatusResponseData> {
-        let cfg = self.http_config();
-        let base = url::Url::parse(&format!("{}/relayer/status", cfg.api_url))?;
-        let url =
-            url::Url::parse_with_params(base.as_str(), &[("taskId", params.task_id.as_str())])?;
-
-        let resp: RelayStatusResponse = http::get(&self.http, &cfg, url.as_str()).await?;
+        let resp: RelayStatusResponse = self
+            .get("/relayer/status", &[("taskId", params.task_id.as_str())])
+            .await?;
         Ok(resp.data)
     }
 
@@ -117,8 +110,7 @@ impl LiFiClient {
         &self,
         params: &TransactionAnalyticsRequest,
     ) -> Result<TransactionAnalyticsResponse> {
-        let cfg = self.http_config();
-        let mut url = url::Url::parse(&format!("{}/analytics/transfers", cfg.api_url))?;
+        let mut url = url::Url::parse(&format!("{}/analytics/transfers", self.api_url()))?;
 
         {
             let mut qs = url.query_pairs_mut();
@@ -134,6 +126,6 @@ impl LiFiClient {
             }
         }
 
-        http::get(&self.http, &cfg, url.as_str()).await
+        self.get_url(&url).await
     }
 }

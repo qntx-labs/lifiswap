@@ -5,12 +5,12 @@
 //! ## Quick Start
 //!
 //! ```no_run
-//! use lifiswap::LiFiClient;
+//! use lifiswap::{LiFiClient, LiFiConfig};
 //!
 //! # async fn example() -> lifiswap::error::Result<()> {
-//! let client = LiFiClient::builder()
-//!     .integrator("my-app")
-//!     .build()?;
+//! let client = LiFiClient::new(
+//!     LiFiConfig::builder().integrator("my-app").build(),
+//! )?;
 //!
 //! let chains = client.get_chains(None).await?;
 //! println!("supported chains: {}", chains.len());
@@ -25,4 +25,4 @@ pub mod types;
 mod api;
 mod http;
 
-pub use client::{LiFiClient, LiFiClientBuilder, LiFiConfig};
+pub use client::{LiFiClient, LiFiConfig, RetryConfig};

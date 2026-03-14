@@ -5,23 +5,30 @@ use serde::{Deserialize, Serialize};
 use super::{ChainId, Order};
 
 /// Quote request with `fromAmount` specified.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct QuoteRequest {
     /// Source chain ID or key.
+    #[builder(into)]
     pub from_chain: String,
     /// Source token address.
+    #[builder(into)]
     pub from_token: String,
     /// Sender wallet address.
+    #[builder(into)]
     pub from_address: String,
     /// Input amount in base units.
+    #[builder(into)]
     pub from_amount: String,
     /// Destination chain ID or key.
+    #[builder(into)]
     pub to_chain: String,
     /// Destination token address.
+    #[builder(into)]
     pub to_token: String,
     /// Receiver wallet address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub to_address: Option<String>,
     /// Ordering preference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -31,9 +38,11 @@ pub struct QuoteRequest {
     pub slippage: Option<f64>,
     /// Integrator identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub integrator: Option<String>,
     /// Referrer address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub referrer: Option<String>,
     /// Integrator fee (0-1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,23 +68,30 @@ pub struct QuoteRequest {
 }
 
 /// Quote request using `toAmount` (reverse quote).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct QuoteToAmountRequest {
     /// Source chain ID or key.
+    #[builder(into)]
     pub from_chain: String,
     /// Source token address.
+    #[builder(into)]
     pub from_token: String,
     /// Sender wallet address.
+    #[builder(into)]
     pub from_address: String,
     /// Desired output amount in base units.
+    #[builder(into)]
     pub to_amount: String,
     /// Destination chain ID or key.
+    #[builder(into)]
     pub to_chain: String,
     /// Destination token address.
+    #[builder(into)]
     pub to_token: String,
     /// Receiver wallet address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub to_address: Option<String>,
     /// Ordering preference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -85,9 +101,11 @@ pub struct QuoteToAmountRequest {
     pub slippage: Option<f64>,
     /// Integrator identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub integrator: Option<String>,
     /// Referrer address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub referrer: Option<String>,
     /// Integrator fee (0-1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -95,12 +113,14 @@ pub struct QuoteToAmountRequest {
 }
 
 /// Contract call specification for `getContractCallsQuote`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct ContractCall {
     /// Target contract address.
+    #[builder(into)]
     pub call_to: String,
     /// Call data.
+    #[builder(into)]
     pub call_data: String,
     /// Native token value to send.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -111,18 +131,23 @@ pub struct ContractCall {
 }
 
 /// Request parameters for contract calls quote.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct ContractCallsQuoteRequest {
     /// Source chain ID or key.
+    #[builder(into)]
     pub from_chain: String,
     /// Source token address.
+    #[builder(into)]
     pub from_token: String,
     /// Sender wallet address.
+    #[builder(into)]
     pub from_address: String,
     /// Destination chain ID or key.
+    #[builder(into)]
     pub to_chain: String,
     /// Destination token address.
+    #[builder(into)]
     pub to_token: String,
     /// Input amount in base units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -165,7 +190,7 @@ pub struct ContractCallsQuoteRequest {
 }
 
 /// Request for gas recommendation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct GasRecommendationRequest {
     /// Chain ID to get gas recommendation for.

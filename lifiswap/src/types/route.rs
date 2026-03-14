@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::{ChainId, Insurance, LiFiStep, Order, Token, ToolFilter};
 
 /// Route options for customizing route search.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteOptions {
     /// Ordering preference.
@@ -22,6 +22,7 @@ pub struct RouteOptions {
     pub fee: Option<f64>,
     /// Referrer address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub referrer: Option<String>,
     /// Bridge filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -87,7 +88,7 @@ pub struct Route {
 }
 
 /// Request parameters for getting routes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct RoutesRequest {
     /// Source chain ID.
@@ -95,16 +96,21 @@ pub struct RoutesRequest {
     /// Destination chain ID.
     pub to_chain_id: ChainId,
     /// Source token address.
+    #[builder(into)]
     pub from_token_address: String,
     /// Destination token address.
+    #[builder(into)]
     pub to_token_address: String,
     /// Input amount in base units.
+    #[builder(into)]
     pub from_amount: String,
     /// Sender address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub from_address: Option<String>,
     /// Receiver address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub to_address: Option<String>,
     /// Route options.
     #[serde(default, skip_serializing_if = "Option::is_none")]
