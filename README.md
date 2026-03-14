@@ -1,4 +1,4 @@
-# lifiswap
+# LI.FI Swap
 
 [![CI][ci-badge]][ci-url]
 [![License][license-badge]][license-url]
@@ -17,14 +17,37 @@ lifiswap wraps the [LI.FI API](https://docs.li.fi) with idiomatic Rust types, pr
 
 ## Crates
 
-| Crate | Description |
-| --- | --- |
-| **[`lifiswap`](lifiswap/)** | Core SDK — client, types, execution engine |
-| **[`lifiswap-evm`](lifiswap-evm/)** | EVM provider via [alloy](https://docs.rs/alloy) (signing, allowance, balance) |
-| **[`lifiswap-svm`](lifiswap-svm/)** | Solana provider (planned) |
-| **[`lifiswap-btc`](lifiswap-btc/)** | Bitcoin provider (planned) |
-| **[`lifiswap-sui`](lifiswap-sui/)** | Sui provider (planned) |
-| **[`lifiswap-cli`](lifiswap-cli/)** | CLI tool (planned) |
+| Crate | | Description |
+| --- | --- | --- |
+| **[`lifiswap`](lifiswap/)** | [![crates.io][lifiswap-crate]][lifiswap-crate-url] [![docs.rs][lifiswap-doc]][lifiswap-doc-url] | Core SDK — client, types, execution engine |
+| **[`lifiswap-evm`](lifiswap-evm/)** | [![crates.io][evm-crate]][evm-crate-url] [![docs.rs][evm-doc]][evm-doc-url] | EVM provider via [alloy](https://docs.rs/alloy) |
+| **[`lifiswap-svm`](lifiswap-svm/)** | [![crates.io][svm-crate]][svm-crate-url] [![docs.rs][svm-doc]][svm-doc-url] | Solana provider (planned) |
+| **[`lifiswap-btc`](lifiswap-btc/)** | [![crates.io][btc-crate]][btc-crate-url] [![docs.rs][btc-doc]][btc-doc-url] | Bitcoin provider (planned) |
+| **[`lifiswap-sui`](lifiswap-sui/)** | [![crates.io][sui-crate]][sui-crate-url] [![docs.rs][sui-doc]][sui-doc-url] | Sui provider (planned) |
+| **[`lifiswap-cli`](lifiswap-cli/)** | [![crates.io][cli-crate]][cli-crate-url] | CLI tool (planned) |
+
+[lifiswap-crate]: https://img.shields.io/crates/v/lifiswap.svg
+[lifiswap-crate-url]: https://crates.io/crates/lifiswap
+[lifiswap-doc]: https://img.shields.io/docsrs/lifiswap.svg
+[lifiswap-doc-url]: https://docs.rs/lifiswap
+[evm-crate]: https://img.shields.io/crates/v/lifiswap-evm.svg
+[evm-crate-url]: https://crates.io/crates/lifiswap-evm
+[evm-doc]: https://img.shields.io/docsrs/lifiswap-evm.svg
+[evm-doc-url]: https://docs.rs/lifiswap-evm
+[svm-crate]: https://img.shields.io/crates/v/lifiswap-svm.svg
+[svm-crate-url]: https://crates.io/crates/lifiswap-svm
+[svm-doc]: https://img.shields.io/docsrs/lifiswap-svm.svg
+[svm-doc-url]: https://docs.rs/lifiswap-svm
+[btc-crate]: https://img.shields.io/crates/v/lifiswap-btc.svg
+[btc-crate-url]: https://crates.io/crates/lifiswap-btc
+[btc-doc]: https://img.shields.io/docsrs/lifiswap-btc.svg
+[btc-doc-url]: https://docs.rs/lifiswap-btc
+[sui-crate]: https://img.shields.io/crates/v/lifiswap-sui.svg
+[sui-crate-url]: https://crates.io/crates/lifiswap-sui
+[sui-doc]: https://img.shields.io/docsrs/lifiswap-sui.svg
+[sui-doc-url]: https://docs.rs/lifiswap-sui
+[cli-crate]: https://img.shields.io/crates/v/lifiswap-cli.svg
+[cli-crate-url]: https://crates.io/crates/lifiswap-cli
 
 ## Quick Start
 
@@ -33,13 +56,13 @@ lifiswap wraps the [LI.FI API](https://docs.li.fi) with idiomatic Rust types, pr
 **Shell** (macOS / Linux):
 
 ```sh
-curl -fsSL https://sh.qntx.fun/lifiswap | sh
+curl -fsSL https://sh.qntx.fun/labs/lifiswap | sh
 ```
 
 **PowerShell** (Windows):
 
 ```powershell
-irm https://sh.qntx.fun/lifiswap/ps | iex
+irm https://sh.qntx.fun/labs/lifiswap/ps | iex
 ```
 
 ### One-Line Swap
