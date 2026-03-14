@@ -3,6 +3,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::state::EXECUTION_STATE;
+use crate::error::{LiFiError, Result};
 use crate::types::{
     ExecutionAction, ExecutionActionStatus, ExecutionActionType, ExecutionError, ExecutionStatus,
     LiFiStepExtended, StepExecution,
@@ -11,7 +12,11 @@ use crate::types::{
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as u64)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
+fn execution_not_initialized() -> LiFiError {
+    LiFiError::Execution("Execution has not been initialized on this step.".to_owned())
 }
 
 /// Manages execution status updates for a single route.
@@ -39,6 +44,10 @@ impl StatusManager {
     ///
     /// If the step has no execution state, creates a new one with `Pending` status.
     /// If the step was previously `Failed`, resets it to `Pending` for retry.
+    ///
+    /// # Errors
+    ///
+    /// This method is infallible — it always ensures execution is set.
     pub fn initialize_execution(&self, step: &mut LiFiStepExtended) -> StepExecution {
         if step.execution.is_none() {
             step.execution = Some(StepExecution {
@@ -70,7 +79,22 @@ impl StatusManager {
             self.update_step_in_route(step);
         }
 
-        step.execution.clone().expect("execution was just set")
+        // SAFETY: we just set execution above if it was None
+        step.execution.clone().unwrap_or_else(|| StepExecution {
+            started_at: now_ms(),
+            signed_at: None,
+            status: ExecutionStatus::Pending,
+            actions: Vec::new(),
+            last_action_type: None,
+            from_amount: None,
+            to_amount: None,
+            to_token: None,
+            fee_costs: None,
+            gas_costs: None,
+            internal_tx_link: None,
+            external_tx_link: None,
+            error: None,
+        })
     }
 
     /// Update the execution state of a step with partial data.
@@ -120,20 +144,20 @@ impl StatusManager {
 
     /// Create and push a new action into the step's execution.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if execution has not been initialized.
+    /// Returns [`LiFiError::Execution`] if execution has not been initialized.
     pub fn create_action(
         &self,
         step: &mut LiFiStepExtended,
         action_type: ExecutionActionType,
         chain_id: u64,
         status: ExecutionActionStatus,
-    ) -> ExecutionAction {
+    ) -> Result<ExecutionAction> {
         let exec = step
             .execution
             .as_mut()
-            .expect("execution must be initialized before creating actions");
+            .ok_or_else(execution_not_initialized)?;
 
         let action = ExecutionAction {
             action_type,
@@ -152,39 +176,54 @@ impl StatusManager {
         exec.actions.push(action.clone());
         exec.last_action_type = Some(action_type);
         self.update_step_in_route(step);
-        action
+        Ok(action)
     }
 
     /// Find or create an action of the given type.
+    ///
+    /// If an action with the given type already exists, updates its status.
+    /// Otherwise creates a new action.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LiFiError::Execution`] if execution has not been initialized.
     pub fn initialize_action(
         &self,
         step: &mut LiFiStepExtended,
         action_type: ExecutionActionType,
         chain_id: u64,
         status: ExecutionActionStatus,
-    ) -> ExecutionAction {
+    ) -> Result<ExecutionAction> {
         if self.find_action(step, action_type).is_some() {
-            self.update_action(step, action_type, status, None);
+            self.update_action(step, action_type, status, None)?;
             return self
                 .find_action(step, action_type)
                 .cloned()
-                .expect("action was just found");
+                .ok_or_else(|| {
+                    LiFiError::Execution(format!(
+                        "Action {action_type:?} not found after update."
+                    ))
+                });
         }
         self.create_action(step, action_type, chain_id, status)
     }
 
     /// Update an existing action's status and optional extra fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LiFiError::Execution`] if execution has not been initialized.
     pub fn update_action(
         &self,
         step: &mut LiFiStepExtended,
         action_type: ExecutionActionType,
         status: ExecutionActionStatus,
         params: Option<ActionUpdateParams>,
-    ) {
+    ) -> Result<()> {
         let exec = step
             .execution
             .as_mut()
-            .expect("execution must be initialized");
+            .ok_or_else(execution_not_initialized)?;
 
         match status {
             ExecutionActionStatus::Failed => {
@@ -246,6 +285,7 @@ impl StatusManager {
             .sort_by_key(|a| i32::from(a.status != ExecutionActionStatus::Done));
 
         self.update_step_in_route(step);
+        Ok(())
     }
 
     /// Enable or disable status update propagation.

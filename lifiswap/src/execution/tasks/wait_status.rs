@@ -67,7 +67,7 @@ impl ExecutionTask for WaitForTransactionStatusTask {
             self.action_type,
             chain_id,
             ExecutionActionStatus::Pending,
-        );
+        )?;
 
         let status_response = poll_transaction_status(ctx.client, &tx_hash).await?;
 
@@ -89,7 +89,7 @@ impl ExecutionTask for WaitForTransactionStatusTask {
                 substatus_message: status_response.substatus_message.clone(),
                 ..Default::default()
             }),
-        );
+        )?;
 
         ctx.status_manager.update_execution(
             ctx.step,

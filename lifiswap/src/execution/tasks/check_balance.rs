@@ -30,7 +30,7 @@ impl ExecutionTask for CheckBalanceTask {
             action_type,
             from_chain_id,
             ExecutionActionStatus::Started,
-        );
+        )?;
 
         let wallet_address =
             ctx.step

@@ -59,7 +59,7 @@ impl ExecutionTask for PrepareTransactionTask {
             action_type,
             ExecutionActionStatus::ActionRequired,
             None,
-        );
+        )?;
 
         if !ctx.allow_user_interaction {
             return Ok(TaskStatus::Paused);

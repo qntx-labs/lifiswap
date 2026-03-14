@@ -76,8 +76,8 @@ pub fn convert_quote_to_route(
         && let Some(ref prev_est) = prev.estimate
     {
         to_amount = prev_est.to_amount.clone().unwrap_or_default();
-        to_amount_min = prev_est.to_amount_min.clone();
-        to_amount_usd = prev_est.to_amount_usd.clone();
+        to_amount_min.clone_from(&prev_est.to_amount_min);
+        to_amount_usd.clone_from(&prev_est.to_amount_usd);
     }
 
     let from_amount_usd = estimate

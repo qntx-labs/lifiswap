@@ -33,7 +33,7 @@ impl EvmProvider {
 
     /// Returns the wallet address derived from the signer.
     #[must_use]
-    pub fn address(&self) -> Address {
+    pub const fn address(&self) -> Address {
         self.signer.address()
     }
 }

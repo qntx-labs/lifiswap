@@ -63,7 +63,7 @@ impl ExecutionTask for EvmCheckAllowanceTask {
             ExecutionActionType::CheckAllowance,
             from_chain_id,
             ExecutionActionStatus::Started,
-        );
+        )?;
 
         let owner: Address = ctx
             .step
@@ -133,7 +133,7 @@ impl ExecutionTask for EvmCheckAllowanceTask {
             ExecutionActionType::CheckAllowance,
             ExecutionActionStatus::Done,
             None,
-        );
+        )?;
 
         if sufficient {
             tracing::debug!(allowance = %allowance, required = %from_amount, "allowance sufficient");
@@ -145,7 +145,7 @@ impl ExecutionTask for EvmCheckAllowanceTask {
     }
 }
 
-/// Approve ERC-20 token spending for the LiFi contract.
+/// Approve ERC-20 token spending for the `LiFi` contract.
 ///
 /// Sends an `approve` transaction with `type(uint256).max` as the amount.
 #[derive(Debug, Clone)]
@@ -186,7 +186,7 @@ impl ExecutionTask for EvmSetAllowanceTask {
             ExecutionActionType::SetAllowance,
             from_chain_id,
             ExecutionActionStatus::ActionRequired,
-        );
+        )?;
 
         if !ctx.allow_user_interaction {
             return Ok(TaskStatus::Paused);
@@ -245,7 +245,7 @@ impl ExecutionTask for EvmSetAllowanceTask {
                 tx_hash: Some(format!("{tx_hash:#x}")),
                 ..Default::default()
             }),
-        );
+        )?;
 
         Ok(TaskStatus::Completed)
     }
@@ -306,8 +306,7 @@ impl ExecutionTask for EvmSignAndExecuteTask {
         let value: U256 = tx_request
             .value
             .as_deref()
-            .map(|v| v.parse().unwrap_or(U256::ZERO))
-            .unwrap_or(U256::ZERO);
+            .map_or(U256::ZERO, |v| v.parse().unwrap_or(U256::ZERO));
 
         let gas_limit: Option<u64> = tx_request.gas_limit.as_deref().and_then(|g| g.parse().ok());
 
@@ -358,11 +357,11 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 signed_at: Some(
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map_or(0, |d| d.as_millis() as u64),
+                        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
                 ),
                 ..Default::default()
             }),
-        );
+        )?;
 
         let receipt = pending
             .get_receipt()

@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{ChainId, FeeCost, GasCost, Token};
 
+/// Callback invoked whenever a route is updated during execution.
+pub type UpdateRouteHook = Box<dyn Fn(&RouteExtended) + Send + Sync>;
+
 /// Overall execution status of a step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -279,7 +282,7 @@ impl Default for InteractionSettings {
 #[derive(Default)]
 pub struct ExecutionOptions {
     /// Hook called whenever the route is updated during execution.
-    pub update_route_hook: Option<Box<dyn Fn(&RouteExtended) + Send + Sync>>,
+    pub update_route_hook: Option<UpdateRouteHook>,
     /// Whether to execute in the background (no user interaction).
     pub execute_in_background: bool,
 }

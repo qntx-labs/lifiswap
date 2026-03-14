@@ -37,7 +37,7 @@ impl std::fmt::Debug for EvmStepExecutor {
             .field("rpc_url", &self.rpc_url)
             .field("options", &self.options)
             .field("interaction", &self.interaction)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

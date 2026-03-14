@@ -84,13 +84,11 @@ pub fn parse_units(amount: &str, decimals: u8) -> Option<String> {
     let abs = if negative { &amount[1..] } else { amount };
     let dec = decimals as usize;
 
-    let (integer, fraction) = if let Some(dot_pos) = abs.find('.') {
+    let (integer, fraction) = abs.find('.').map_or((abs, ""), |dot_pos| {
         let int_part = &abs[..dot_pos];
         let frac_part = &abs[dot_pos + 1..];
         (int_part, frac_part)
-    } else {
-        (abs, "")
-    };
+    });
 
     if !integer.chars().all(|c| c.is_ascii_digit()) {
         return None;
