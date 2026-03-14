@@ -140,6 +140,37 @@ impl LiFiClient {
     ///
     /// Returns [`LiFiError::Network`] if the underlying HTTP client fails to initialize.
     pub fn new(config: LiFiConfig) -> Result<Self> {
+        let headers = Self::build_headers(&config);
+
+        let http = reqwest::Client::builder()
+            .default_headers(headers)
+            .timeout(config.timeout)
+            .pool_max_idle_per_host(20)
+            .build()
+            .map_err(LiFiError::Network)?;
+
+        Ok(Self {
+            inner: Arc::new(ClientInner { config, http }),
+        })
+    }
+
+    /// Create a client with a pre-configured [`reqwest::Client`].
+    ///
+    /// Use this when you need custom middleware, proxy settings, or TLS
+    /// configuration that the default builder doesn't expose.
+    ///
+    /// **Note:** SDK headers (`x-lifi-sdk`, `x-lifi-integrator`, etc.)
+    /// are **not** automatically injected — you must set them yourself
+    /// if the provided client doesn't already include them.
+    #[must_use]
+    pub fn with_http_client(config: LiFiConfig, http: reqwest::Client) -> Self {
+        Self {
+            inner: Arc::new(ClientInner { config, http }),
+        }
+    }
+
+    /// Build the default SDK headers from a config.
+    fn build_headers(config: &LiFiConfig) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert("x-lifi-sdk", HeaderValue::from_static(SDK_VERSION));
         if let Ok(v) = HeaderValue::from_str(&config.integrator) {
@@ -155,17 +186,7 @@ impl LiFiClient {
         {
             headers.insert("x-lifi-userid", v);
         }
-
-        let http = reqwest::Client::builder()
-            .default_headers(headers)
-            .timeout(config.timeout)
-            .pool_max_idle_per_host(20)
-            .build()
-            .map_err(LiFiError::Network)?;
-
-        Ok(Self {
-            inner: Arc::new(ClientInner { config, http }),
-        })
+        headers
     }
 
     /// Returns a reference to the current configuration.

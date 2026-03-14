@@ -259,6 +259,39 @@ async fn client_sends_sdk_headers() {
 }
 
 #[tokio::test]
+async fn with_custom_http_client() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/chains"))
+        .and(wiremock::matchers::header("x-custom", "hello"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "chains": []
+        })))
+        .mount(&server)
+        .await;
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        "x-custom",
+        reqwest::header::HeaderValue::from_static("hello"),
+    );
+    let http = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .unwrap();
+
+    let config = LiFiConfig::builder()
+        .integrator("test")
+        .api_url(server.uri())
+        .build();
+
+    let client = LiFiClient::with_http_client(config, http);
+    let chains = client.get_chains(None).await.expect("request failed");
+    assert!(chains.is_empty());
+}
+
+#[tokio::test]
 async fn client_is_clone_and_send() {
     let server = MockServer::start().await;
 
