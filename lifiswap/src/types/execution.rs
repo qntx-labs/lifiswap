@@ -1,11 +1,36 @@
 //! Execution engine types for route execution tracking.
 
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use super::{ChainId, FeeCost, GasCost, Token};
 
 /// Callback invoked whenever a route is updated during execution.
 pub type UpdateRouteHook = Box<dyn Fn(&RouteExtended) + Send + Sync>;
+
+/// Parameters passed to the exchange rate update hook.
+#[derive(Debug, Clone)]
+pub struct ExchangeRateUpdateParams {
+    /// Destination token.
+    pub to_token: Token,
+    /// Previous estimated output amount.
+    pub old_to_amount: String,
+    /// New estimated output amount.
+    pub new_to_amount: String,
+}
+
+/// Hook invoked when the exchange rate changes beyond the slippage threshold.
+///
+/// Should return `true` to accept the new rate, `false` to reject (cancel).
+///
+/// Wrapped in [`Arc`] so it can be cloned out of shared state for use across
+/// async boundaries.
+pub type AcceptExchangeRateUpdateHook = Arc<
+    dyn Fn(ExchangeRateUpdateParams) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync,
+>;
 
 /// Overall execution status of a step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -283,6 +308,9 @@ impl Default for InteractionSettings {
 pub struct ExecutionOptions {
     /// Hook called whenever the route is updated during execution.
     pub update_route_hook: Option<UpdateRouteHook>,
+    /// Hook called when the exchange rate changes beyond the slippage threshold.
+    /// Return `true` to accept the new rate, `false` to cancel.
+    pub accept_exchange_rate_update_hook: Option<AcceptExchangeRateUpdateHook>,
     /// Whether to execute in the background (no user interaction).
     pub execute_in_background: bool,
 }
@@ -293,6 +321,10 @@ impl std::fmt::Debug for ExecutionOptions {
             .field(
                 "update_route_hook",
                 &self.update_route_hook.as_ref().map(|_| ".."),
+            )
+            .field(
+                "accept_exchange_rate_update_hook",
+                &self.accept_exchange_rate_update_hook.as_ref().map(|_| ".."),
             )
             .field("execute_in_background", &self.execute_in_background)
             .finish()

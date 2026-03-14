@@ -2,6 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::messages::get_action_message;
 use super::state::ExecutionState;
 use crate::error::{LiFiError, Result};
 use crate::types::{
@@ -164,7 +165,7 @@ impl StatusManager {
         let action = ExecutionAction {
             action_type,
             status,
-            message: None,
+            message: get_action_message(action_type, status).map(String::from),
             chain_id: Some(chain_id),
             tx_hash: None,
             tx_link: None,
@@ -255,6 +256,9 @@ impl StatusManager {
             .find(|a| a.action_type == action_type)
         {
             action.status = status;
+            action.message = get_action_message(action_type, status)
+                .map(String::from)
+                .or_else(|| action.message.take());
             if let Some(p) = params {
                 if let Some(chain_id) = p.chain_id {
                     action.chain_id = Some(chain_id);

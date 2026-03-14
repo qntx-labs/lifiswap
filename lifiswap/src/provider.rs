@@ -73,6 +73,9 @@ pub trait Provider: Send + Sync + 'static {
 pub trait StepExecutor: Send + Sync {
     /// Execute a single step, mutating its execution state in place.
     ///
+    /// The `provider` reference gives access to on-chain queries (balance,
+    /// address validation, etc.) for the step's chain type.
+    ///
     /// # Errors
     ///
     /// Returns an error if any phase of execution fails (balance check,
@@ -81,6 +84,7 @@ pub trait StepExecutor: Send + Sync {
         &mut self,
         client: &LiFiClient,
         step: &mut LiFiStepExtended,
+        provider: &dyn Provider,
     ) -> Result<()>;
 
     /// Update interaction settings (e.g. disable user prompts for background execution).

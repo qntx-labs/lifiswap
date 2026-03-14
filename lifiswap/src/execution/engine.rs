@@ -42,13 +42,42 @@ impl LiFiClient {
 
     /// Resume a previously started (and possibly failed/paused) route.
     ///
-    /// The route should contain execution state from a prior run.
-    /// Steps that are already `Done` are skipped.
+    /// Mirrors the TypeScript SDK's `resumeRoute` logic:
+    /// 1. If the route is still actively executing and not halted,
+    ///    updates execution options and returns the current route state.
+    /// 2. Otherwise, calls [`prepare_restart`] to clean up stale actions
+    ///    and re-executes from the point of failure.
     ///
     /// # Errors
     ///
     /// Same as [`LiFiClient::execute_route`].
     pub async fn resume_route(
+        &self,
+        mut route: RouteExtended,
+        providers: &[Box<dyn Provider>],
+        options: ExecutionOptions,
+    ) -> Result<RouteExtended> {
+        let state = self.execution_state();
+
+        if let Some(data) = state.get(&route.id) {
+            let execution_halted = data.executors.iter().any(|e| !e.allow_execution());
+
+            if !execution_halted {
+                drop(data);
+                self.update_route_execution(&route.id, options);
+                return self.get_active_route(&route.id).ok_or_else(|| {
+                    LiFiError::Execution("Route execution promise not found.".to_owned())
+                });
+            }
+            drop(data);
+        }
+
+        crate::execution::prepare_restart(&mut route);
+        self.execute_route_extended(route, providers, options).await
+    }
+
+    /// Execute a pre-extended route (used by `resume_route` after `prepare_restart`).
+    async fn execute_route_extended(
         &self,
         route: RouteExtended,
         providers: &[Box<dyn Provider>],
@@ -134,10 +163,43 @@ impl LiFiClient {
         let execute_in_background = options.execute_in_background;
         state.create(route.clone(), options);
 
-        // Prefetch chain list once instead of per-step
         let chains = self.get_chains(None).await?;
 
+        let result = self
+            .execute_steps_inner(&mut route, providers, &chains, execute_in_background)
+            .await;
+
+        match result {
+            Ok(()) => {
+                let final_route = state
+                    .get(&route.id)
+                    .map(|d| d.route.clone())
+                    .unwrap_or(route);
+                state.delete(&final_route.id);
+                Ok(final_route)
+            }
+            Err(e) => {
+                self.stop_route_execution(&route.id);
+                Err(e)
+            }
+        }
+    }
+
+    async fn execute_steps_inner(
+        &self,
+        route: &mut RouteExtended,
+        providers: &[Box<dyn Provider>],
+        chains: &[crate::types::Chain],
+        execute_in_background: bool,
+    ) -> Result<()> {
+        let state = self.execution_state();
+
         for step_idx in 0..route.steps.len() {
+            if state.get(&route.id).is_none() {
+                tracing::debug!(route_id = %route.id, "execution stopped externally");
+                break;
+            }
+
             let step = &route.steps[step_idx];
 
             if let Some(ref exec) = step.execution
@@ -147,7 +209,22 @@ impl LiFiClient {
                 continue;
             }
 
-            let from_chain_id = step.step.action.from_chain_id;
+            if step_idx > 0 {
+                let prev_to_amount = route.steps[step_idx - 1]
+                    .execution
+                    .as_ref()
+                    .and_then(|e| e.to_amount.clone());
+                if let Some(to_amount) = prev_to_amount {
+                    route.steps[step_idx].step.action.from_amount = Some(to_amount.clone());
+                    if let Some(ref mut included) = route.steps[step_idx].step.included_steps
+                        && let Some(first) = included.first_mut()
+                    {
+                        first.action.from_amount = Some(to_amount);
+                    }
+                }
+            }
+
+            let from_chain_id = route.steps[step_idx].step.action.from_chain_id;
 
             let chain = chains
                 .iter()
@@ -157,14 +234,15 @@ impl LiFiClient {
                     message: format!("No chain info found for chain ID {from_chain_id:?}"),
                 })?;
 
-            let chain_type = chain.chain_type;
-
             let provider = providers
                 .iter()
-                .find(|p| p.chain_type() == chain_type)
+                .find(|p| p.chain_type() == chain.chain_type)
                 .ok_or_else(|| LiFiError::Provider {
                     code: LiFiErrorCode::ProviderUnavailable,
-                    message: format!("No provider registered for chain type {chain_type:?}"),
+                    message: format!(
+                        "No provider registered for chain type {:?}",
+                        chain.chain_type
+                    ),
                 })?;
 
             let mut executor = provider
@@ -190,23 +268,34 @@ impl LiFiClient {
                 "executing step"
             );
 
-            executor.execute_step(self, step_ref).await?;
+            executor
+                .execute_step(self, step_ref, provider.as_ref())
+                .await?;
+
+            if step_ref
+                .execution
+                .as_ref()
+                .is_none_or(|e| e.status != ExecutionStatus::Done)
+            {
+                tracing::info!(
+                    step_id = %step_ref.step.id,
+                    "step not done, stopping route execution"
+                );
+                self.stop_route_execution(&route.id);
+            }
 
             state.with_route(&route.id, |data| {
                 if step_idx < data.route.steps.len() {
                     data.route.steps[step_idx] = step_ref.clone();
                 }
-                data.executors.push(executor);
             });
+
+            if !executor.allow_execution() {
+                tracing::debug!("executor disallowed further execution, returning early");
+                return Ok(());
+            }
         }
 
-        let final_route = state
-            .get(&route.id)
-            .map(|d| d.route.clone())
-            .unwrap_or(route);
-
-        state.delete(&final_route.id);
-
-        Ok(final_route)
+        Ok(())
     }
 }

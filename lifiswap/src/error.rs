@@ -6,7 +6,7 @@
 use std::fmt;
 use std::time::Duration;
 
-/// `LiFi` error codes, aligned with the `TypeScript` SDK.
+/// `LiFi` error codes, aligned with the `TypeScript` SDK (`errors/constants.ts`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum LiFiErrorCode {
@@ -24,28 +24,46 @@ pub enum LiFiErrorCode {
     ProviderUnavailable = 1005,
     /// Requested resource not found.
     NotFound = 1006,
-    /// Insufficient funds/balance.
-    InsufficientFunds = 1007,
     /// Chain switch required but not allowed.
-    ChainSwitchError = 1008,
-    /// Wallet changed during execution.
-    WalletChangedDuringExecution = 1009,
-    /// Transaction was rejected by the user.
-    TransactionRejected = 1010,
+    ChainSwitchError = 1007,
+    /// Transaction not yet prepared.
+    TransactionUnprepared = 1008,
+    /// Gas limit is too low.
+    GasLimitError = 1009,
+    /// Transaction was cancelled by the user.
+    TransactionCanceled = 1010,
     /// Slippage exceeded the allowed threshold.
     SlippageError = 1011,
-    /// Transaction was cancelled.
-    TransactionCancelled = 1012,
-    /// SDK configuration error.
-    ConfigError = 1013,
+    /// User rejected the signature request.
+    SignatureRejected = 1012,
+    /// Insufficient token balance.
+    BalanceError = 1013,
     /// Allowance is not sufficient.
     AllowanceRequired = 1014,
-    /// Exchange rate expired.
-    ExchangeRateExpired = 1015,
-    /// RPC communication error.
-    RpcError = 1016,
-    /// Server-side error from the `LiFi` API.
-    ServerError = 1100,
+    /// Insufficient funds for gas + value.
+    InsufficientFunds = 1015,
+    /// Exchange rate update was cancelled.
+    ExchangeRateUpdateCanceled = 1016,
+    /// Wallet address changed during execution.
+    WalletChangedDuringExecution = 1017,
+    /// Transaction expired before confirmation.
+    TransactionExpired = 1018,
+    /// Transaction simulation failed.
+    TransactionSimulationFailed = 1019,
+    /// Transaction conflict (nonce reuse, etc.).
+    TransactionConflict = 1020,
+    /// Transaction not found on-chain.
+    TransactionNotFound = 1021,
+    /// Transaction was rejected by the network.
+    TransactionRejected = 1022,
+    /// API rate limit exceeded.
+    RateLimitExceeded = 1023,
+    /// Third-party service error.
+    ThirdPartyError = 1024,
+    /// Insufficient gas token balance.
+    InsufficientGas = 1025,
+    /// SDK configuration error.
+    ConfigError = 1026,
 }
 
 impl fmt::Display for LiFiErrorCode {
@@ -78,6 +96,8 @@ impl fmt::Display for HttpErrorDetails {
 }
 
 /// Map an HTTP status code to a [`LiFiErrorCode`].
+///
+/// Aligned with the `TypeScript` SDK's `httpError.ts` classification map.
 #[must_use]
 pub const fn http_status_to_error_code(status: u16) -> LiFiErrorCode {
     match status {
@@ -85,7 +105,9 @@ pub const fn http_status_to_error_code(status: u16) -> LiFiErrorCode {
         401 | 403 => LiFiErrorCode::ConfigError,
         404 => LiFiErrorCode::NotFound,
         409 => LiFiErrorCode::SlippageError,
-        429 | 500..=599 => LiFiErrorCode::ServerError,
+        424 => LiFiErrorCode::ThirdPartyError,
+        429 => LiFiErrorCode::RateLimitExceeded,
+        500..=599 => LiFiErrorCode::InternalError,
         _ => LiFiErrorCode::InternalError,
     }
 }
@@ -151,6 +173,20 @@ pub enum LiFiError {
     /// SDK configuration error (missing integrator, invalid API URL, etc.).
     #[error("Config error: {0}")]
     Config(String),
+
+    /// Step execution should be retried with the given parameters.
+    ///
+    /// Thrown by a step executor when `execute_step` should be retried
+    /// (e.g. wallet rejected EIP-7702 upgrade → retry with fallback params).
+    /// The execution engine catches this and retries the step with cleared
+    /// execution state.
+    #[error("Step retry requested: {message}")]
+    StepRetry {
+        /// Human-readable reason for the retry.
+        message: String,
+        /// Strategy-specific retry parameters (opaque key-value map).
+        retry_params: std::collections::HashMap<String, serde_json::Value>,
+    },
 }
 
 impl LiFiError {

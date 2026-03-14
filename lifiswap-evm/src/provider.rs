@@ -80,7 +80,7 @@ impl Provider for EvmProvider {
             .get_balance(addr)
             .await
             .map_err(|e| LiFiError::Provider {
-                code: LiFiErrorCode::RpcError,
+                code: LiFiErrorCode::ProviderUnavailable,
                 message: format!("Failed to fetch native balance: {e}"),
             })?;
 

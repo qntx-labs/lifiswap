@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use super::status::StatusManager;
 use crate::LiFiClient;
 use crate::error::Result;
+use crate::provider::Provider;
 use crate::types::{LiFiStepExtended, TaskStatus};
 
 /// Context passed to each task in the execution pipeline.
@@ -15,6 +16,10 @@ pub struct ExecutionContext<'a> {
     pub step: &'a mut LiFiStepExtended,
     /// Status manager for tracking actions.
     pub status_manager: &'a StatusManager,
+    /// Chain provider for on-chain queries (balance, allowance, etc.).
+    pub provider: &'a dyn Provider,
+    /// The route ID this step belongs to.
+    pub route_id: &'a str,
     /// Whether this is a cross-chain bridge execution.
     pub is_bridge_execution: bool,
     /// Whether user interaction is allowed.
@@ -106,7 +111,40 @@ mod tests {
     use super::*;
     use crate::execution::state::ExecutionState;
     use crate::execution::status::StatusManager;
-    use crate::types::{Action, ChainId, LiFiStepExtended, Token};
+    use crate::provider::Provider;
+    use crate::types::{
+        Action, ChainId, ChainType, LiFiStepExtended, StepExecutorOptions, Token, TokenAmount,
+    };
+
+    struct MockProvider;
+
+    #[async_trait]
+    impl Provider for MockProvider {
+        fn chain_type(&self) -> ChainType {
+            ChainType::EVM
+        }
+        fn is_address(&self, _address: &str) -> bool {
+            true
+        }
+        async fn resolve_address(
+            &self,
+            _name: &str,
+            _chain_id: Option<u64>,
+        ) -> Result<Option<String>> {
+            Ok(None)
+        }
+        async fn get_balance(&self, _wallet: &str, _tokens: &[Token]) -> Result<Vec<TokenAmount>> {
+            Ok(vec![])
+        }
+        async fn create_step_executor(
+            &self,
+            _options: StepExecutorOptions,
+        ) -> Result<Box<dyn crate::provider::StepExecutor>> {
+            unimplemented!()
+        }
+    }
+
+    static MOCK_PROVIDER: MockProvider = MockProvider;
 
     fn dummy_token() -> Token {
         Token {
@@ -160,6 +198,8 @@ mod tests {
             client,
             step,
             status_manager: mgr,
+            provider: &MOCK_PROVIDER,
+            route_id: "test-route",
             is_bridge_execution: false,
             allow_user_interaction: true,
         }

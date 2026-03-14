@@ -128,7 +128,7 @@ impl ExecutionTask for EvmAllowanceTask {
             .call()
             .await
             .map_err(|e| LiFiError::Provider {
-                code: LiFiErrorCode::RpcError,
+                code: LiFiErrorCode::ProviderUnavailable,
                 message: format!("Failed to check allowance: {e}"),
             })?;
 
