@@ -59,26 +59,25 @@ pub async fn step_comparison(
     }
 
     let mut allow_step_update = false;
-    if allow_user_interaction
-        && let Some(hook) = accept_hook {
-            let old_to_amount = old_step
-                .estimate
-                .as_ref()
-                .and_then(|e| e.to_amount.clone())
-                .unwrap_or_default();
-            let new_to_amount = new_step
-                .estimate
-                .as_ref()
-                .and_then(|e| e.to_amount.clone())
-                .unwrap_or_default();
+    if allow_user_interaction && let Some(hook) = accept_hook {
+        let old_to_amount = old_step
+            .estimate
+            .as_ref()
+            .and_then(|e| e.to_amount.clone())
+            .unwrap_or_default();
+        let new_to_amount = new_step
+            .estimate
+            .as_ref()
+            .and_then(|e| e.to_amount.clone())
+            .unwrap_or_default();
 
-            let params = ExchangeRateUpdateParams {
-                to_token: new_step.action.to_token.clone(),
-                old_to_amount,
-                new_to_amount,
-            };
-            allow_step_update = hook(params).await;
-        }
+        let params = ExchangeRateUpdateParams {
+            to_token: new_step.action.to_token.clone(),
+            old_to_amount,
+            new_to_amount,
+        };
+        allow_step_update = hook(params).await;
+    }
 
     if !allow_step_update {
         return Err(LiFiError::Transaction {
