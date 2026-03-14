@@ -308,7 +308,7 @@ async fn get_wallet_balances_success() {
                         "chainId": 1,
                         "name": "USD Coin",
                         "amount": "1000000",
-                        "blockNumber": 19000000
+                        "blockNumber": 19_000_000
                     }
                 ],
                 "137": []
@@ -363,15 +363,19 @@ async fn patch_contract_calls_success() {
         .await;
 
     let client = test_client(&server.uri());
-    let entries = vec![lifiswap::types::PatchCallDataEntry::builder()
-        .chain_id(lifiswap::types::ChainId(1))
-        .from_token_address("0xTokenAddress")
-        .target_contract_address("0xContractAddress")
-        .call_data_to_patch("0xoriginal")
-        .patches(vec![lifiswap::types::CallDataPatch::builder()
-            .amount_to_replace("1000000")
-            .build()])
-        .build()];
+    let entries = vec![
+        lifiswap::types::PatchCallDataEntry::builder()
+            .chain_id(lifiswap::types::ChainId(1))
+            .from_token_address("0xTokenAddress")
+            .target_contract_address("0xContractAddress")
+            .call_data_to_patch("0xoriginal")
+            .patches(vec![
+                lifiswap::types::CallDataPatch::builder()
+                    .amount_to_replace("1000000")
+                    .build(),
+            ])
+            .build(),
+    ];
 
     let result = client
         .patch_contract_calls(&entries)
