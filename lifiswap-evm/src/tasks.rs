@@ -686,7 +686,7 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
         ctx: &'a mut ExecutionContext<'_>,
     ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
         Box::pin(async move {
-            let unsigned = ctx
+            let all_typed_data = ctx
                 .step
                 .typed_data
                 .as_ref()
@@ -696,7 +696,7 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 })?
                 .clone();
 
-            if unsigned.is_empty() {
+            if all_typed_data.is_empty() {
                 return Err(LiFiError::Transaction {
                     code: LiFiErrorCode::InternalError,
                     message: "Typed data array is empty.".to_owned(),
@@ -709,10 +709,31 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 ExecutionActionType::Swap
             };
 
+            // Filter out typed data entries that have already been signed as permits
+            let intent_typed_data: Vec<_> = all_typed_data
+                .iter()
+                .filter(|td| {
+                    !ctx.signed_typed_data.iter().any(|signed| {
+                        signed
+                            .typed_data
+                            .as_ref()
+                            .is_some_and(|std| std.primary_type == td.primary_type)
+                    })
+                })
+                .collect();
+
+            if intent_typed_data.is_empty() {
+                return Err(LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: "Typed data for transfer is not found after filtering permits."
+                        .to_owned(),
+                });
+            }
+
             ctx.status_manager.update_action(
                 ctx.step,
                 action_type,
-                ExecutionActionStatus::ActionRequired,
+                ExecutionActionStatus::MessageRequired,
                 None,
             )?;
 
@@ -720,9 +741,30 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 return Ok(TaskStatus::Paused);
             }
 
-            let mut signed_data: Vec<serde_json::Value> = Vec::with_capacity(unsigned.len());
+            // Start with already-signed permit data
+            let mut signed_data: Vec<serde_json::Value> = Vec::with_capacity(all_typed_data.len());
 
-            for td in &unsigned {
+            for signed in &ctx.signed_typed_data {
+                if let Some(ref td) = signed.typed_data {
+                    let mut entry =
+                        serde_json::to_value(td).map_err(|e| LiFiError::Transaction {
+                            code: LiFiErrorCode::InternalError,
+                            message: format!("Failed to serialize typed data: {e}"),
+                        })?;
+                    if let (serde_json::Value::Object(map), Some(sig)) =
+                        (&mut entry, &signed.signature)
+                    {
+                        map.insert(
+                            "signature".to_owned(),
+                            serde_json::Value::String(sig.clone()),
+                        );
+                    }
+                    signed_data.push(entry);
+                }
+            }
+
+            // Sign the remaining intent typed data
+            for td in &intent_typed_data {
                 let signature = self.signer.sign_typed_data(td).await?;
 
                 let mut entry = serde_json::to_value(td).map_err(|e| LiFiError::Transaction {
