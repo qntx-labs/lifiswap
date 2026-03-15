@@ -83,79 +83,77 @@ impl ExecutionTask for EvmBatchedSignAndExecuteTask {
             let mut calls: Vec<BatchCall> = Vec::new();
 
             // Build approve call if needed
-            if !is_native_token(&ctx.step.action.from_token.address) {
-                if let Some(estimate) = ctx.step.estimate.as_ref() {
-                    if !estimate.skip_approval.unwrap_or(false)
-                        && estimate.approval_address.is_some()
-                    {
-                        let owner: Address = ctx
-                            .step
-                            .action
-                            .from_address
-                            .as_deref()
-                            .unwrap_or_default()
-                            .parse()
-                            .map_err(|_| {
-                                LiFiError::Validation("Invalid from_address.".to_owned())
-                            })?;
+            if !is_native_token(&ctx.step.action.from_token.address)
+                && let Some(estimate) = ctx.step.estimate.as_ref()
+                && !estimate.skip_approval.unwrap_or(false)
+                && estimate.approval_address.is_some()
+            {
+                let owner: Address = ctx
+                    .step
+                    .action
+                    .from_address
+                    .as_deref()
+                    .unwrap_or_default()
+                    .parse()
+                    .map_err(|_| {
+                        LiFiError::Validation("Invalid from_address.".to_owned())
+                    })?;
 
-                        let is_permit2 =
-                            self.permit2.is_some() && !estimate.skip_permit.unwrap_or(false);
+                let is_permit2 =
+                    self.permit2.is_some() && !estimate.skip_permit.unwrap_or(false);
 
-                        let spender: Address = if is_permit2 {
-                            self.permit2.unwrap().permit2
-                        } else {
-                            estimate
-                                .approval_address
-                                .as_deref()
-                                .unwrap()
-                                .parse()
-                                .map_err(|_| {
-                                    LiFiError::Validation("Invalid approval_address.".to_owned())
-                                })?
-                        };
+                let spender: Address = if is_permit2 {
+                    self.permit2.expect("permit2 checked above").permit2
+                } else {
+                    estimate
+                        .approval_address
+                        .as_deref()
+                        .expect("checked above")
+                        .parse()
+                        .map_err(|_| {
+                            LiFiError::Validation("Invalid approval_address.".to_owned())
+                        })?
+                };
 
-                        let token_addr: Address =
-                            ctx.step.action.from_token.address.parse().map_err(|_| {
-                                LiFiError::Validation("Invalid token address.".to_owned())
-                            })?;
+                let token_addr: Address =
+                    ctx.step.action.from_token.address.parse().map_err(|_| {
+                        LiFiError::Validation("Invalid token address.".to_owned())
+                    })?;
 
-                        let from_amount: U256 = ctx
-                            .step
-                            .action
-                            .from_amount
-                            .as_deref()
-                            .unwrap_or("0")
-                            .parse()
-                            .unwrap_or(U256::ZERO);
+                let from_amount: U256 = ctx
+                    .step
+                    .action
+                    .from_amount
+                    .as_deref()
+                    .unwrap_or("0")
+                    .parse()
+                    .unwrap_or(U256::ZERO);
 
-                        let read_provider =
-                            ProviderBuilder::new().connect_http(self.rpc_url.clone());
-                        let contract = IERC20::new(token_addr, &read_provider);
-                        let allowance: U256 = contract
-                            .allowance(owner, spender)
-                            .call()
-                            .await
-                            .map_err(|e| LiFiError::Provider {
-                                code: LiFiErrorCode::ProviderUnavailable,
-                                message: format!("Failed to check allowance: {e}"),
-                            })?;
+                let read_provider =
+                    ProviderBuilder::new().connect_http(self.rpc_url.clone());
+                let contract = IERC20::new(token_addr, &read_provider);
+                let allowance: U256 = contract
+                    .allowance(owner, spender)
+                    .call()
+                    .await
+                    .map_err(|e| LiFiError::Provider {
+                        code: LiFiErrorCode::ProviderUnavailable,
+                        message: format!("Failed to check allowance: {e}"),
+                    })?;
 
-                        if allowance < from_amount {
-                            let approve_amount = if is_permit2 { U256::MAX } else { from_amount };
-                            let calldata = IERC20::approveCall {
-                                spender,
-                                amount: approve_amount,
-                            }
-                            .abi_encode();
-                            calls.push(BatchCall {
-                                to: token_addr,
-                                data: Bytes::from(calldata),
-                                value: U256::ZERO,
-                            });
-                            tracing::debug!("batched: added approve call");
-                        }
+                if allowance < from_amount {
+                    let approve_amount = if is_permit2 { U256::MAX } else { from_amount };
+                    let calldata = IERC20::approveCall {
+                        spender,
+                        amount: approve_amount,
                     }
+                    .abi_encode();
+                    calls.push(BatchCall {
+                        to: token_addr,
+                        data: Bytes::from(calldata),
+                        value: U256::ZERO,
+                    });
+                    tracing::debug!("batched: added approve call");
                 }
             }
 

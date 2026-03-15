@@ -16,11 +16,13 @@ async fn create_executor(
     provider: &dyn Provider,
     route_id: String,
     execute_in_background: bool,
+    retry_params: std::collections::HashMap<String, serde_json::Value>,
 ) -> Result<Box<dyn StepExecutor>> {
     let mut executor = provider
         .create_step_executor(StepExecutorOptions {
             route_id,
             execute_in_background,
+            retry_params,
         })
         .await?;
     if execute_in_background {
@@ -315,8 +317,13 @@ impl LiFiClient {
                 })?;
 
             let route_id = route.base.id.clone();
-            let mut executor =
-                create_executor(provider.as_ref(), route_id.clone(), execute_in_background).await?;
+            let mut executor = create_executor(
+                provider.as_ref(),
+                route_id.clone(),
+                execute_in_background,
+                Default::default(),
+            )
+            .await?;
 
             let step_ref = &mut route.steps[step_idx];
 
@@ -335,16 +342,23 @@ impl LiFiClient {
                 .await
             {
                 Ok(()) => {}
-                Err(LiFiError::StepRetry { message, .. }) => {
+                Err(LiFiError::StepRetry {
+                    message,
+                    retry_params,
+                }) => {
                     tracing::info!(
                         step_id = %step_ref.id,
                         reason = %message,
                         "step retry requested, clearing execution and retrying"
                     );
                     step_ref.execution = None;
-                    executor =
-                        create_executor(provider.as_ref(), route_id.clone(), execute_in_background)
-                            .await?;
+                    executor = create_executor(
+                        provider.as_ref(),
+                        route_id.clone(),
+                        execute_in_background,
+                        retry_params,
+                    )
+                    .await?;
                     executor
                         .execute_step(self, step_ref, provider.as_ref(), &opts, chain)
                         .await?;

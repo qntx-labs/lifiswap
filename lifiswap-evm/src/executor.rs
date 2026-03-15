@@ -21,7 +21,7 @@ use lifiswap::types::{
 use crate::signer::EvmSigner;
 use crate::tasks::{
     EvmAllowanceTask, EvmBatchedSignAndExecuteTask, EvmCheckPermitsTask, EvmNativePermitTask,
-    EvmRelaySignAndExecuteTask, EvmSignAndExecuteTask,
+    EvmRelaySignAndExecuteTask, EvmSignAndExecuteTask, EvmWaitForTransactionTask,
 };
 
 /// Permit2 contract addresses for a chain.
@@ -86,23 +86,34 @@ impl EvmStepExecutor {
         }
     }
 
+    const BATCH_EXCLUDED_TOOLS: &[&str] = &["thorswap"];
+
     fn build_pipeline(&self, step: &LiFiStepExtended) -> TaskPipeline {
         let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
         let is_relay = step.typed_data.as_ref().is_some_and(|td| !td.is_empty());
 
         let mut tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = Vec::new();
 
-        if !self.disable_message_signing {
+        let disable_signing =
+            self.disable_message_signing || step.step_type != lifiswap::types::StepType::Lifi;
+        if !disable_signing {
             tasks.push(Box::new(EvmCheckPermitsTask::new(Arc::clone(&self.signer))));
         }
 
-        // Exclude tools that don't support batching (e.g. thorswap)
-        const BATCH_EXCLUDED_TOOLS: &[&str] = &["thorswap"];
+        let atomicity_not_ready = self
+            .options
+            .retry_params
+            .get("atomicityNotReady")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
         let tool_supports_batching = step
             .tool
             .as_deref()
-            .is_none_or(|t| !BATCH_EXCLUDED_TOOLS.contains(&t));
-        let is_batched = !is_relay && self.signer.supports_batching() && tool_supports_batching;
+            .is_none_or(|t| !Self::BATCH_EXCLUDED_TOOLS.contains(&t));
+        let is_batched = !is_relay
+            && !atomicity_not_ready
+            && self.signer.supports_batching()
+            && tool_supports_batching;
 
         if is_relay {
             tasks.push(Box::new(PrepareTransactionTask));
@@ -134,6 +145,9 @@ impl EvmStepExecutor {
                 self.rpc_url.clone(),
                 self.permit2,
             )));
+            tasks.push(Box::new(EvmWaitForTransactionTask::new(Arc::clone(
+                &self.signer,
+            ))));
         }
 
         if is_bridge {

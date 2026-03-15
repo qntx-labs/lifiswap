@@ -482,12 +482,14 @@ impl std::fmt::Debug for ExecutionOptions {
 }
 
 /// Options passed when creating a step executor.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct StepExecutorOptions {
     /// Route ID this executor belongs to.
     pub route_id: String,
     /// Whether to execute in the background.
     pub execute_in_background: bool,
+    /// Retry parameters from a previous `StepRetry` error (e.g. `atomicityNotReady`).
+    pub retry_params: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// Result status of a task in the execution pipeline.

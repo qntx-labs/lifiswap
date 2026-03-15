@@ -6,6 +6,7 @@ mod native_permit;
 mod permits;
 mod relay;
 mod sign_execute;
+mod wait_receipt;
 
 pub use allowance::EvmAllowanceTask;
 use alloy::network::TransactionBuilder;
@@ -23,6 +24,7 @@ pub use native_permit::EvmNativePermitTask;
 pub use permits::EvmCheckPermitsTask;
 pub use relay::EvmRelaySignAndExecuteTask;
 pub use sign_execute::EvmSignAndExecuteTask;
+pub use wait_receipt::EvmWaitForTransactionTask;
 
 use crate::signer::EvmSigner;
 
@@ -157,10 +159,10 @@ fn get_domain_chain_id(domain: &serde_json::Value) -> Option<u64> {
         if let Some(n) = chain_id.as_u64() {
             return Some(n);
         }
-        if let Some(s) = chain_id.as_str() {
-            if let Ok(n) = s.parse::<u64>() {
-                return Some(n);
-            }
+        if let Some(s) = chain_id.as_str()
+            && let Ok(n) = s.parse::<u64>()
+        {
+            return Some(n);
         }
     }
     if let Some(salt) = domain.get("salt").and_then(|v| v.as_str()) {

@@ -67,7 +67,19 @@ impl ExecutionTask for EvmAllowanceTask {
             let Some(estimate) = ctx.step.estimate.as_ref() else {
                 return false;
             };
-            estimate.approval_address.is_some() && !estimate.skip_approval.unwrap_or(false)
+            if estimate.approval_address.is_none() || estimate.skip_approval.unwrap_or(false) {
+                return false;
+            }
+            // Skip if a matching native permit was already signed for this chain
+            let from_chain_id = ctx.step.action.from_chain_id.0;
+            let has_matching_permit = ctx.signed_typed_data.iter().any(|s| {
+                s.typed_data
+                    .as_ref()
+                    .and_then(|td| td.domain.as_ref())
+                    .and_then(super::get_domain_chain_id)
+                    .is_some_and(|id| id == from_chain_id)
+            });
+            !has_matching_permit
         })
     }
 

@@ -274,10 +274,10 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 tx.set_chain_id(chain_id);
             }
 
-            if self.signer.is_local_account() {
-                if let Some(fee) = fetch_max_priority_fee(&self.rpc_url).await {
-                    tx.set_max_priority_fee_per_gas(fee);
-                }
+            if self.signer.is_local_account()
+                && let Some(fee) = fetch_max_priority_fee(&self.rpc_url).await
+            {
+                tx.set_max_priority_fee_per_gas(fee);
             }
 
             if is_permit2_wrapped {
@@ -306,17 +306,6 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                     ..Default::default()
                 }),
             )?;
-
-            let receipt = self.signer.confirm_transaction(tx_hash).await?;
-
-            if !receipt.status() {
-                return Err(LiFiError::Transaction {
-                    code: LiFiErrorCode::TransactionFailed,
-                    message: format!("Transaction reverted: {tx_hash:#x}"),
-                });
-            }
-
-            tracing::info!(tx = %tx_hash, "transaction confirmed");
 
             Ok(TaskStatus::Completed)
         })
