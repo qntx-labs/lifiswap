@@ -20,9 +20,9 @@ lifiswap wraps the [LI.FI API](https://docs.li.fi) with idiomatic Rust types, pr
 | Crate | | Description |
 | --- | --- | --- |
 | **[`lifiswap`](lifiswap/)** | [![crates.io][lifiswap-crate]][lifiswap-crate-url] [![docs.rs][lifiswap-doc]][lifiswap-doc-url] | Core SDK — client, types, execution engine |
-| **[`lifiswap-evm`](lifiswap-evm/)** | [![crates.io][evm-crate]][evm-crate-url] [![docs.rs][evm-doc]][evm-doc-url] | EVM provider via [alloy](https://docs.rs/alloy) |
-| **[`lifiswap-svm`](lifiswap-svm/)** | [![crates.io][svm-crate]][svm-crate-url] [![docs.rs][svm-doc]][svm-doc-url] | Solana provider (planned) |
-| **[`lifiswap-btc`](lifiswap-btc/)** | [![crates.io][btc-crate]][btc-crate-url] [![docs.rs][btc-doc]][btc-doc-url] | Bitcoin provider (planned) |
+| **[`lifiswap-evm`](lifiswap-evm/)** | [![crates.io][evm-crate]][evm-crate-url] [![docs.rs][evm-doc]][evm-doc-url] | EVM provider via [alloy](https://docs.rs/alloy) v1 |
+| **[`lifiswap-svm`](lifiswap-svm/)** | [![crates.io][svm-crate]][svm-crate-url] [![docs.rs][svm-doc]][svm-doc-url] | Solana provider via [solana-sdk](https://docs.rs/solana-sdk) v3 |
+| **[`lifiswap-btc`](lifiswap-btc/)** | [![crates.io][btc-crate]][btc-crate-url] [![docs.rs][btc-doc]][btc-doc-url] | Bitcoin provider via [bitcoin](https://docs.rs/bitcoin) v0.32 |
 | **[`lifiswap-sui`](lifiswap-sui/)** | [![crates.io][sui-crate]][sui-crate-url] [![docs.rs][sui-doc]][sui-doc-url] | Sui provider (planned) |
 | **[`lifiswap-cli`](lifiswap-cli/)** | [![crates.io][cli-crate]][cli-crate-url] | CLI tool (planned) |
 
@@ -65,9 +65,13 @@ curl -fsSL https://sh.qntx.fun/labs/lifiswap | sh
 irm https://sh.qntx.fun/labs/lifiswap/ps | iex
 ```
 
-### One-Line Swap
+### One-Line Swap (EVM)
 
 ```rust
+use lifiswap::{LiFiClient, LiFiConfig};
+use lifiswap::types::{ExecutionOptions, QuoteRequest};
+use lifiswap_evm::{EvmProvider, LocalSigner};
+
 let client = LiFiClient::new(LiFiConfig::builder().integrator("my-app").build())?;
 client.add_provider(EvmProvider::new(LocalSigner::new(key, rpc.clone()), rpc));
 
@@ -77,8 +81,29 @@ let result = client.swap(
         .from_address(&wallet).from_amount("1000000")
         .to_chain("8453").to_token(USDC_BASE)
         .build(),
-    Default::default(),
+    ExecutionOptions::default(),
 ).await?;
+```
+
+### Multi-Chain Providers
+
+```rust
+use lifiswap_evm::{EvmProvider, LocalSigner};
+use lifiswap_svm::{SvmProvider, KeypairSigner as SvmKeypairSigner};
+use lifiswap_btc::{BtcProvider, KeypairSigner as BtcKeypairSigner};
+
+let client = LiFiClient::new(LiFiConfig::builder().integrator("my-app").build())?;
+
+// EVM (Ethereum, Arbitrum, Base, …)
+client.add_provider(EvmProvider::new(LocalSigner::new(evm_key, rpc_url), rpc_url));
+
+// Solana
+let svm_signer = SvmKeypairSigner::new(solana_keypair);
+client.add_provider(SvmProvider::new(svm_signer, &solana_rpc));
+
+// Bitcoin
+let btc_signer = BtcKeypairSigner::new(btc_private_key, bitcoin::Network::Bitcoin);
+client.add_provider(BtcProvider::new(btc_signer));
 ```
 
 ### Step-by-Step Control
@@ -108,10 +133,61 @@ let tokens = client.get_tokens(None).await?;
 
 ## Architecture
 
-- **lifiswap** — Core SDK. `LiFiClient` is built via `LiFiConfig` builder with optional API key, retry config, and custom HTTP client. All 18 LI.FI API endpoints are covered. The execution engine handles the full lifecycle: balance checks → allowance approval → transaction signing → cross-chain status polling → retry on failure. `LiFiClient` is `Clone + Send + Sync` (`Arc<Inner>`).
-- **lifiswap-evm** — EVM chain provider using [alloy](https://docs.rs/alloy). Handles ERC-20 balance queries, token approval (infinite approve), transaction signing via `EthereumWallet`, and receipt confirmation. Implements the `Provider` and `StepExecutor` traits.
-- **lifiswap-svm / lifiswap-btc / lifiswap-sui** — Chain-specific providers for Solana, Bitcoin, and Sui (scaffolded, implementations planned).
-- **lifiswap-cli** — Command-line interface for cross-chain swaps (planned).
+### Core (`lifiswap`)
+
+`LiFiClient` is the single entry point — `Clone + Send + Sync` via `Arc<ClientInner>`. Configuration uses compile-time [`bon::Builder`](https://docs.rs/bon) for `LiFiConfig` and `RetryConfig`. HTTP requests retry automatically with exponential backoff via [`backon`](https://docs.rs/backon) (retryable on 429/5xx, timeouts, and connection errors).
+
+The execution engine orchestrates cross-chain routes through two core traits:
+
+- **`Provider`** — chain-specific operations: address validation, name resolution, balance queries, and `StepExecutor` creation.
+- **`StepExecutor`** — executes a single step via `TaskPipeline`, a sequential chain of `ExecutionTask` implementations.
+
+Shared step execution logic lives in `run_step_pipeline()`, which every chain executor delegates to. This handles `StatusManager` lifecycle, `ExecutionContext` construction, pipeline execution, and error recovery — matching the TypeScript SDK's `BaseStepExecutor.executeStep` pattern.
+
+### EVM (`lifiswap-evm`)
+
+Built on [alloy](https://docs.rs/alloy) v1. The `EvmSigner` trait abstracts signing backends (private key, hardware wallet, browser extension, EIP-5792 batching).
+
+| Feature | Details |
+| --- | --- |
+| **Signing** | `EvmSigner` trait with `LocalSigner` implementation (EIP-1559, EIP-712) |
+| **Allowance** | Auto-detect, reset (USDT-style), and infinite approve |
+| **Permit2** | Gasless approvals via Uniswap Permit2 + LI.FI Permit2Proxy |
+| **Relay** | Gasless execution — sign EIP-712 typed data, submit via relayer API |
+| **Batching** | EIP-5792 `wallet_sendCalls` for atomic approve+swap |
+| **ENS** | Name resolution via `alloy-ens` `ProviderEnsExt::resolve_name()` |
+| **Multi-chain RPC** | `RpcUrlResolver` trait for per-chain RPC endpoint selection |
+| **Receipt** | `confirm_transaction()` on signer, no separate provider needed |
+
+**Task pipeline:** CheckPermits → CheckBalance → Allowance → PrepareTransaction → Sign&Execute (or Relay, or Batched) → WaitForReceipt → WaitForTransactionStatus
+
+### Solana (`lifiswap-svm`)
+
+Built on [solana-sdk](https://docs.rs/solana-sdk) v3. The `SvmSigner` trait abstracts keypair signing.
+
+| Feature | Details |
+| --- | --- |
+| **Signing** | `SvmSigner` trait with `KeypairSigner` implementation |
+| **Balances** | Native SOL + SPL Token + Token-2022 via ATA derivation |
+| **RPC pool** | `RpcPool` with sequential retry across multiple endpoints |
+| **Simulation** | Pre-send simulation with configurable skip |
+| **SNS** | Solana Name Service `.sol` domain resolution |
+| **Confirmation** | Send-and-confirm with automatic resend on blockhash expiry |
+
+**Task pipeline:** CheckBalance → PrepareTransaction → Sign → SendAndConfirm → WaitForTransactionStatus
+
+### Bitcoin (`lifiswap-btc`)
+
+Built on [bitcoin](https://docs.rs/bitcoin) v0.32. The `BtcSigner` trait abstracts PSBT signing.
+
+| Feature | Details |
+| --- | --- |
+| **Signing** | `BtcSigner` trait with `KeypairSigner` (BIP-174 PSBT) |
+| **PSBT finalize** | Manual finalization: P2WPKH, P2TR key-path, P2SH-P2WPKH |
+| **Blockchain API** | `BlockchainApi` — mempool.space REST with multi-backend fallback |
+| **Confirmation** | Polling-based (10s interval, 30min timeout) |
+
+**Task pipeline:** CheckBalance → PrepareTransaction → Sign&Broadcast → Confirm → WaitForTransactionStatus
 
 ## Configuration
 
@@ -144,6 +220,8 @@ let client = LiFiClient::with_http_client(
 );
 ```
 
+**Defaults:** API URL `https://li.quest/v1` · Timeout 30s · Retry 3× (300ms–10s, jitter) · TLS via rustls (feature `native-tls` available)
+
 ## API Coverage
 
 All [LI.FI REST API](https://docs.li.fi/api-reference/introduction) endpoints are supported:
@@ -175,12 +253,15 @@ The execution engine (`client.swap()` / `client.execute_route()`) automates the 
 
 ```text
 Quote → Route → [for each step]:
-  ├── Check Balance    — verify sufficient token balance
-  ├── Check Allowance  — query current ERC-20 allowance
-  ├── Set Allowance    — approve spender if insufficient (ERC-20 only)
-  ├── Prepare Tx       — fetch transaction data from LI.FI API
-  ├── Sign & Send      — sign with wallet, submit to chain
-  └── Wait for Status  — poll LI.FI status API until DONE/FAILED
+  ├─ Provider::create_step_executor()
+  │    └─ TaskPipeline::run()
+  │         ├── Check Balance     — verify sufficient token balance
+  │         ├── Check Allowance   — query current spender allowance (EVM)
+  │         ├── Set Allowance     — approve spender if needed (EVM)
+  │         ├── Prepare Tx        — fetch transaction data from LI.FI API
+  │         ├── Sign & Send       — sign with signer, broadcast to network
+  │         └── Wait for Status   — poll LI.FI status API until DONE/FAILED
+  └─ StatusManager updates execution state in real-time
 ```
 
 Failed steps can be resumed with `client.resume_route()`. Active routes can be stopped with `client.stop_route_execution()` and listed with `client.get_active_routes()`.
