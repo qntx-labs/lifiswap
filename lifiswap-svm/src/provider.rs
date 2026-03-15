@@ -92,7 +92,7 @@ impl SvmProvider {
     /// Disabling simulation can speed up execution but removes an
     /// early error detection step.
     #[must_use]
-    pub fn with_skip_simulation(mut self) -> Self {
+    pub const fn with_skip_simulation(mut self) -> Self {
         self.skip_simulation = true;
         self
     }
@@ -137,8 +137,7 @@ impl Provider for SvmProvider {
 
             let sol_balance = self
                 .rpc_pool
-                .call_with_retry(|rpc| {
-                    let owner = owner;
+                .call_with_retry(move |rpc| {
                     async move {
                         rpc.get_balance(&owner)
                             .await
@@ -236,8 +235,7 @@ async fn get_spl_token_balance(
     for program in &[TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID] {
         let ata = derive_ata(owner, mint, program);
         let account = rpc_pool
-            .call_with_retry(|rpc| {
-                let ata = ata;
+            .call_with_retry(move |rpc| {
                 async move {
                     rpc.get_account(&ata)
                         .await

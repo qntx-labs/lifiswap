@@ -85,10 +85,11 @@ impl EvmNativePermitTask {
         let spender = permit2_cfg.permit2;
         let provider = ProviderBuilder::new().connect_http(self.rpc_url.clone());
         let contract = IERC20::new(token_addr, &provider);
-        match contract.allowance(owner, spender).call().await {
-            Ok(allowance) => allowance >= from_amount,
-            Err(_) => false,
-        }
+        contract
+            .allowance(owner, spender)
+            .call()
+            .await
+            .map_or(false, |allowance| allowance >= from_amount)
     }
 }
 

@@ -57,13 +57,13 @@ impl RpcPool {
 
     /// Returns the number of RPC clients in the pool.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.clients.len()
     }
 
     /// Returns `true` if the pool contains no clients.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.clients.is_empty()
     }
 

@@ -40,7 +40,7 @@ impl std::fmt::Debug for SvmSendAndConfirmTask {
 }
 
 impl SvmSendAndConfirmTask {
-    pub(crate) fn new(
+    pub(crate) const fn new(
         rpc_pool: RpcPool,
         skip_simulation: bool,
         signed_txs: Arc<Mutex<Vec<VersionedTransaction>>>,

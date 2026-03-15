@@ -72,13 +72,10 @@ impl ExecutionTask for EvmWaitForTransactionTask {
                 .execution
                 .as_ref()
                 .and_then(|exec| {
-                    exec.actions.iter().find_map(|a| {
-                        if a.action_type == action_type {
-                            a.tx_hash.clone()
-                        } else {
-                            None
-                        }
-                    })
+                    exec.actions
+                        .iter()
+                        .find(|a| a.action_type == action_type)
+                        .and_then(|a| a.tx_hash.clone())
                 })
                 .ok_or_else(|| LiFiError::Transaction {
                     code: LiFiErrorCode::InternalError,
