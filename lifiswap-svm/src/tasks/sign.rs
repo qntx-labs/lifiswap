@@ -8,6 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+use base64::Engine as _;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::execution::status::ActionUpdateParams;
 use lifiswap::execution::task::{ExecutionContext, ExecutionTask};
@@ -27,7 +28,7 @@ use crate::signer::SvmSigner;
 /// for consumption by [`SvmSendAndConfirmTask`](super::SvmSendAndConfirmTask).
 pub struct SvmSignTask {
     signer: Arc<dyn SvmSigner>,
-    signed_txs: Arc<Mutex<Vec<Vec<u8>>>>,
+    signed_txs: Arc<Mutex<Vec<VersionedTransaction>>>,
 }
 
 impl std::fmt::Debug for SvmSignTask {
@@ -39,7 +40,10 @@ impl std::fmt::Debug for SvmSignTask {
 }
 
 impl SvmSignTask {
-    pub(crate) fn new(signer: Arc<dyn SvmSigner>, signed_txs: Arc<Mutex<Vec<Vec<u8>>>>) -> Self {
+    pub(crate) fn new(
+        signer: Arc<dyn SvmSigner>,
+        signed_txs: Arc<Mutex<Vec<VersionedTransaction>>>,
+    ) -> Self {
         Self { signer, signed_txs }
     }
 }
@@ -49,34 +53,26 @@ impl SvmSignTask {
 fn parse_transaction_data(data: &str) -> Result<Vec<Vec<u8>>> {
     let trimmed = data.trim();
 
-    if trimmed.starts_with('[') {
-        let items: Vec<String> =
-            serde_json::from_str(trimmed).map_err(|e| LiFiError::Transaction {
-                code: LiFiErrorCode::InternalError,
-                message: format!("Failed to parse transaction data array: {e}"),
-            })?;
-        items
-            .iter()
-            .map(|s| {
-                use base64::Engine as _;
-                base64::engine::general_purpose::STANDARD
-                    .decode(s)
-                    .map_err(|e| LiFiError::Transaction {
-                        code: LiFiErrorCode::InternalError,
-                        message: format!("Invalid base64 transaction data: {e}"),
-                    })
-            })
-            .collect()
+    let b64_strings: Vec<String> = if trimmed.starts_with('[') {
+        serde_json::from_str(trimmed).map_err(|e| LiFiError::Transaction {
+            code: LiFiErrorCode::InternalError,
+            message: format!("Failed to parse transaction data array: {e}"),
+        })?
     } else {
-        use base64::Engine as _;
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(trimmed)
-            .map_err(|e| LiFiError::Transaction {
-                code: LiFiErrorCode::InternalError,
-                message: format!("Invalid base64 transaction data: {e}"),
-            })?;
-        Ok(vec![bytes])
-    }
+        vec![trimmed.to_owned()]
+    };
+
+    b64_strings
+        .iter()
+        .map(|s| {
+            base64::engine::general_purpose::STANDARD
+                .decode(s)
+                .map_err(|e| LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: format!("Invalid base64 transaction data: {e}"),
+                })
+        })
+        .collect()
 }
 
 impl ExecutionTask for SvmSignTask {
@@ -161,19 +157,9 @@ impl ExecutionTask for SvmSignTask {
                 }),
             )?;
 
-            let serialized: Vec<Vec<u8>> = signed
-                .iter()
-                .map(|tx| {
-                    bincode::serialize(tx).map_err(|e| LiFiError::Transaction {
-                        code: LiFiErrorCode::InternalError,
-                        message: format!("Failed to serialize signed transaction: {e}"),
-                    })
-                })
-                .collect::<Result<Vec<_>>>()?;
-
             {
                 let mut guard = self.signed_txs.lock().expect("signed_txs mutex poisoned");
-                *guard = serialized;
+                *guard = signed;
             }
 
             Ok(TaskStatus::Completed)

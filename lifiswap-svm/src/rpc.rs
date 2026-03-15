@@ -55,10 +55,16 @@ impl RpcPool {
         }
     }
 
-    /// Returns the list of RPC clients.
+    /// Returns the number of RPC clients in the pool.
     #[must_use]
-    pub fn clients(&self) -> &[Arc<RpcClient>] {
-        &self.clients
+    pub fn len(&self) -> usize {
+        self.clients.len()
+    }
+
+    /// Returns `true` if the pool contains no clients.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.clients.is_empty()
     }
 
     /// Execute an async operation across all RPCs with sequential fallback.

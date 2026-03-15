@@ -7,6 +7,7 @@ use std::sync::Arc;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{ChainType, StepExecutorOptions, Token, TokenAmount};
+use solana_sdk::pubkey;
 use solana_sdk::pubkey::Pubkey;
 
 use crate::executor::SvmStepExecutor;
@@ -14,16 +15,16 @@ use crate::rpc::RpcPool;
 use crate::signer::SvmSigner;
 
 /// Solana system program address (used as native SOL token address).
-const SOL_SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
+const SOL_NATIVE_MINT: Pubkey = pubkey!("11111111111111111111111111111111");
 
 /// SPL Token program ID.
-const TOKEN_PROGRAM_ID: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
 /// SPL Token-2022 program ID.
-const TOKEN_2022_PROGRAM_ID: &str = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+const TOKEN_2022_PROGRAM_ID: Pubkey = pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 
 /// Associated Token Account program ID.
-const ATA_PROGRAM_ID: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const ATA_PROGRAM_ID: Pubkey = pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 /// Solana chain provider using [`solana-sdk`] for on-chain interactions.
 ///
@@ -42,7 +43,7 @@ const ATA_PROGRAM_ID: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 /// let keypair = Keypair::new();
 /// let signer = KeypairSigner::new(keypair);
 /// let rpc_url: url::Url = "https://api.mainnet-beta.solana.com".parse().unwrap();
-/// let provider = SvmProvider::new(signer, rpc_url);
+/// let provider = SvmProvider::new(signer, &rpc_url);
 /// ```
 #[derive(Clone)]
 pub struct SvmProvider {
@@ -55,7 +56,7 @@ impl std::fmt::Debug for SvmProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SvmProvider")
             .field("pubkey", &self.signer.pubkey())
-            .field("rpc_count", &self.rpc_pool.clients().len())
+            .field("rpc_count", &self.rpc_pool.len())
             .field("skip_simulation", &self.skip_simulation)
             .finish_non_exhaustive()
     }
@@ -91,7 +92,7 @@ impl SvmProvider {
     /// Disabling simulation can speed up execution but removes an
     /// early error detection step.
     #[must_use]
-    pub const fn with_skip_simulation(mut self) -> Self {
+    pub fn with_skip_simulation(mut self) -> Self {
         self.skip_simulation = true;
         self
     }
@@ -134,30 +135,38 @@ impl Provider for SvmProvider {
                 LiFiError::Validation(format!("Invalid Solana address: {wallet_address}"))
             })?;
 
-            let rpc =
-                self.rpc_pool
-                    .clients()
-                    .first()
-                    .cloned()
-                    .ok_or_else(|| LiFiError::Provider {
+            let sol_balance = self
+                .rpc_pool
+                .call_with_retry(|rpc| {
+                    let owner = owner;
+                    async move {
+                        rpc.get_balance(&owner)
+                            .await
+                            .map_err(|e| LiFiError::Provider {
+                                code: LiFiErrorCode::ProviderUnavailable,
+                                message: format!("Failed to fetch SOL balance: {e}"),
+                            })
+                    }
+                })
+                .await?;
+
+            let block_number = self
+                .rpc_pool
+                .call_with_retry(|rpc| async move {
+                    rpc.get_slot().await.map_err(|e| LiFiError::Provider {
                         code: LiFiErrorCode::ProviderUnavailable,
-                        message: "No RPC client available".to_owned(),
-                    })?;
-
-            let sol_balance = rpc
-                .get_balance(&owner)
+                        message: format!("Failed to fetch slot: {e}"),
+                    })
+                })
                 .await
-                .map_err(|e| LiFiError::Provider {
-                    code: LiFiErrorCode::ProviderUnavailable,
-                    message: format!("Failed to fetch SOL balance: {e}"),
-                })?;
-
-            let slot = rpc.get_slot().await.unwrap_or(0);
-            let block_number = Some(slot);
+                .ok();
 
             let mut results = Vec::with_capacity(tokens.len());
             for token in tokens {
-                if token.address == SOL_SYSTEM_PROGRAM {
+                let mint: Option<Pubkey> = token.address.parse().ok();
+                let is_native = mint.as_ref() == Some(&SOL_NATIVE_MINT);
+
+                if is_native {
                     results.push(TokenAmount {
                         token: token.clone(),
                         amount: Some(sol_balance.to_string()),
@@ -166,7 +175,11 @@ impl Provider for SvmProvider {
                     continue;
                 }
 
-                let amount = get_spl_token_balance(&rpc, &owner, &token.address).await;
+                let amount = if let Some(mint) = mint {
+                    get_spl_token_balance(&self.rpc_pool, &owner, &mint).await
+                } else {
+                    None
+                };
                 results.push(TokenAmount {
                     token: token.clone(),
                     amount,
@@ -195,44 +208,56 @@ impl Provider for SvmProvider {
 }
 
 /// Derive the Associated Token Account (ATA) address for an owner + mint.
+///
+/// Layout: `[owner, token_program, mint]` seeded against the ATA program.
 fn derive_ata(owner: &Pubkey, mint: &Pubkey, token_program: &Pubkey) -> Pubkey {
-    let ata_program: Pubkey = ATA_PROGRAM_ID.parse().expect("valid ATA program ID");
     let (ata, _) = Pubkey::find_program_address(
         &[owner.as_ref(), token_program.as_ref(), mint.as_ref()],
-        &ata_program,
+        &ATA_PROGRAM_ID,
     );
     ata
 }
+
+/// SPL Token Account data layout offset for the `amount` field.
+/// Layout: mint (32) + owner (32) + amount (8) = offset 64.
+const TOKEN_AMOUNT_OFFSET: usize = 64;
+const TOKEN_AMOUNT_END: usize = TOKEN_AMOUNT_OFFSET + 8;
 
 /// Get SPL token balance for a specific mint by checking the ATA.
 ///
 /// Tries standard Token program first, then Token-2022. Returns `None`
 /// if the account doesn't exist or parsing fails.
 async fn get_spl_token_balance(
-    rpc: &solana_rpc_client::nonblocking::rpc_client::RpcClient,
+    rpc_pool: &RpcPool,
     owner: &Pubkey,
-    mint_address: &str,
+    mint: &Pubkey,
 ) -> Option<String> {
-    let mint: Pubkey = mint_address.parse().ok()?;
-    let token_program: Pubkey = TOKEN_PROGRAM_ID.parse().expect("valid program ID");
-    let token_2022_program: Pubkey = TOKEN_2022_PROGRAM_ID.parse().expect("valid program ID");
+    // Try standard Token program ATA, then Token-2022
+    for program in &[TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID] {
+        let ata = derive_ata(owner, mint, program);
+        let account = rpc_pool
+            .call_with_retry(|rpc| {
+                let ata = ata;
+                async move {
+                    rpc.get_account(&ata)
+                        .await
+                        .map_err(|e| LiFiError::Provider {
+                            code: LiFiErrorCode::ProviderUnavailable,
+                            message: format!("Failed to fetch token account: {e}"),
+                        })
+                }
+            })
+            .await
+            .ok()?;
 
-    // Try standard Token program ATA first
-    let ata = derive_ata(owner, &mint, &token_program);
-    if let Ok(account) = rpc.get_account(&ata).await
-        && account.data.len() >= 72
-    {
-        let amount = u64::from_le_bytes(account.data[64..72].try_into().unwrap_or([0u8; 8]));
-        return Some(amount.to_string());
-    }
-
-    // Fallback to Token-2022 program ATA
-    let ata_2022 = derive_ata(owner, &mint, &token_2022_program);
-    if let Ok(account) = rpc.get_account(&ata_2022).await
-        && account.data.len() >= 72
-    {
-        let amount = u64::from_le_bytes(account.data[64..72].try_into().unwrap_or([0u8; 8]));
-        return Some(amount.to_string());
+        if account.data.len() >= TOKEN_AMOUNT_END {
+            let amount = u64::from_le_bytes(
+                account.data[TOKEN_AMOUNT_OFFSET..TOKEN_AMOUNT_END]
+                    .try_into()
+                    .ok()?,
+            );
+            return Some(amount.to_string());
+        }
     }
 
     None
@@ -240,7 +265,8 @@ async fn get_spl_token_balance(
 
 #[derive(serde::Deserialize)]
 struct SnsResult {
-    s: String,
+    #[serde(rename = "s")]
+    status: String,
     result: String,
 }
 
@@ -268,7 +294,7 @@ async fn resolve_sns_address(name: &str) -> Result<Option<String>> {
         Err(_) => return Ok(None),
     };
 
-    if data.s != "ok" {
+    if data.status != "ok" {
         return Ok(None);
     }
 

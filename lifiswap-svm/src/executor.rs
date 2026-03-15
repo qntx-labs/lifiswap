@@ -16,6 +16,7 @@ use lifiswap::types::{
     Chain, ExecutionError, ExecutionOptions, ExecutionStatus, InteractionSettings,
     LiFiStepExtended, StepExecutorOptions,
 };
+use solana_sdk::transaction::VersionedTransaction;
 
 use crate::rpc::RpcPool;
 use crate::signer::SvmSigner;
@@ -42,7 +43,7 @@ impl std::fmt::Debug for SvmStepExecutor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SvmStepExecutor")
             .field("pubkey", &self.signer.pubkey())
-            .field("rpc_count", &self.rpc_pool.clients().len())
+            .field("rpc_count", &self.rpc_pool.len())
             .field("options", &self.options)
             .field("interaction", &self.interaction)
             .finish_non_exhaustive()
@@ -66,10 +67,16 @@ impl SvmStepExecutor {
         }
     }
 
-    fn build_pipeline(&self) -> TaskPipeline {
-        let signed_txs: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
+    fn build_pipeline(&self, is_bridge: bool) -> TaskPipeline {
+        let signed_txs: Arc<Mutex<Vec<VersionedTransaction>>> = Arc::new(Mutex::new(Vec::new()));
 
-        let tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = vec![
+        let status_task = if is_bridge {
+            WaitForTransactionStatusTask::receiving_chain()
+        } else {
+            WaitForTransactionStatusTask::swap()
+        };
+
+        TaskPipeline::new(vec![
             Box::new(CheckBalanceTask),
             Box::new(PrepareTransactionTask),
             Box::new(SvmSignTask::new(
@@ -81,31 +88,8 @@ impl SvmStepExecutor {
                 self.skip_simulation,
                 signed_txs,
             )),
-            Box::new(WaitForTransactionStatusTask::swap()),
-        ];
-
-        TaskPipeline::new(tasks)
-    }
-
-    fn build_bridge_pipeline(&self) -> TaskPipeline {
-        let signed_txs: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
-
-        let tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = vec![
-            Box::new(CheckBalanceTask),
-            Box::new(PrepareTransactionTask),
-            Box::new(SvmSignTask::new(
-                Arc::clone(&self.signer),
-                Arc::clone(&signed_txs),
-            )),
-            Box::new(SvmSendAndConfirmTask::new(
-                self.rpc_pool.clone(),
-                self.skip_simulation,
-                signed_txs,
-            )),
-            Box::new(WaitForTransactionStatusTask::receiving_chain()),
-        ];
-
-        TaskPipeline::new(tasks)
+            Box::new(status_task),
+        ])
     }
 }
 
@@ -143,11 +127,7 @@ impl StepExecutor for SvmStepExecutor {
             status_manager.initialize_execution(step);
 
             let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
-            let pipeline = if is_bridge {
-                self.build_bridge_pipeline()
-            } else {
-                self.build_pipeline()
-            };
+            let pipeline = self.build_pipeline(is_bridge);
 
             let mut ctx = ExecutionContext {
                 client,

@@ -27,23 +27,23 @@ use crate::rpc::RpcPool;
 pub struct SvmSendAndConfirmTask {
     rpc_pool: RpcPool,
     skip_simulation: bool,
-    signed_txs: Arc<Mutex<Vec<Vec<u8>>>>,
+    signed_txs: Arc<Mutex<Vec<VersionedTransaction>>>,
 }
 
 impl std::fmt::Debug for SvmSendAndConfirmTask {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SvmSendAndConfirmTask")
-            .field("rpc_count", &self.rpc_pool.clients().len())
+            .field("rpc_count", &self.rpc_pool.len())
             .field("skip_simulation", &self.skip_simulation)
             .finish_non_exhaustive()
     }
 }
 
 impl SvmSendAndConfirmTask {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         rpc_pool: RpcPool,
         skip_simulation: bool,
-        signed_txs: Arc<Mutex<Vec<Vec<u8>>>>,
+        signed_txs: Arc<Mutex<Vec<VersionedTransaction>>>,
     ) -> Self {
         Self {
             rpc_pool,
@@ -194,23 +194,17 @@ impl ExecutionTask for SvmSendAndConfirmTask {
                     message: "Unable to send transaction. Action not found.".to_owned(),
                 })?;
 
-            let signed_tx_bytes = {
+            let signed_txs = {
                 let guard = self.signed_txs.lock().expect("signed_txs mutex poisoned");
                 guard.clone()
             };
 
-            if signed_tx_bytes.is_empty() {
-                return Err(LiFiError::Transaction {
+            let tx = signed_txs
+                .into_iter()
+                .next()
+                .ok_or_else(|| LiFiError::Transaction {
                     code: LiFiErrorCode::InternalError,
                     message: "No signed transactions available for sending.".to_owned(),
-                });
-            }
-
-            let tx_bytes = &signed_tx_bytes[0];
-            let tx: VersionedTransaction =
-                bincode::deserialize(tx_bytes).map_err(|e| LiFiError::Transaction {
-                    code: LiFiErrorCode::InternalError,
-                    message: format!("Failed to deserialize signed transaction: {e}"),
                 })?;
 
             let signature =
