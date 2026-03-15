@@ -206,6 +206,7 @@ impl Default for BlockchainApi {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn api_error(e: reqwest::Error) -> LiFiError {
     LiFiError::Provider {
         code: LiFiErrorCode::ProviderUnavailable,

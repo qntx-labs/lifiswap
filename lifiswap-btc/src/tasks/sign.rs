@@ -13,7 +13,7 @@ use bitcoin::consensus::encode;
 use bitcoin::hex::FromHex as _;
 use bitcoin::psbt::Psbt;
 use bitcoin::script::PushBytes;
-use bitcoin::{Address, AddressType, Network, Witness, XOnlyPublicKey};
+use bitcoin::{Address, AddressType, Network, Witness};
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::execution::status::ActionUpdateParams;
 use lifiswap::execution::task::{ExecutionContext, ExecutionTask};
@@ -27,7 +27,7 @@ use crate::signer::BtcSigner;
 /// and broadcasts the resulting raw transaction.
 ///
 /// The API returns the PSBT as a hex string in `transaction_request.data`.
-/// This task handles all address types: P2PKH, P2SH (nested SegWit),
+/// This task handles all address types: P2PKH, P2SH (nested `SegWit`),
 /// P2WPKH, P2WSH, and P2TR (Taproot).
 pub struct BtcSignTask {
     signer: Arc<dyn BtcSigner>,
@@ -107,7 +107,7 @@ impl ExecutionTask for BtcSignTask {
                     message: "Transaction signing timed out after 10 minutes.".to_owned(),
                 })??;
 
-            finalize_psbt(&mut psbt)?;
+            finalize_psbt(&mut psbt);
 
             let tx = psbt.extract_tx().map_err(|e| LiFiError::Transaction {
                 code: LiFiErrorCode::TransactionFailed,
@@ -158,7 +158,7 @@ fn prepare_psbt_inputs(psbt: &mut Psbt, signer: &dyn BtcSigner) {
             Some(AddressType::P2tr) => {
                 if input.tap_internal_key.is_none() {
                     let (x_only, _parity) = pubkey.0.x_only_public_key();
-                    input.tap_internal_key = Some(XOnlyPublicKey::from(x_only));
+                    input.tap_internal_key = Some(x_only);
                 }
                 if input.sighash_type.is_none() {
                     input.sighash_type = Some(bitcoin::psbt::PsbtSighashType::from(
@@ -182,7 +182,7 @@ fn prepare_psbt_inputs(psbt: &mut Psbt, signer: &dyn BtcSigner) {
 ///
 /// Bitcoin 0.32 does not provide a built-in `finalize_input` method, so we
 /// handle the common address types manually (P2WPKH, P2TR key-path, P2SH-P2WPKH).
-fn finalize_psbt(psbt: &mut Psbt) -> Result<()> {
+fn finalize_psbt(psbt: &mut Psbt) {
     for input in &mut psbt.inputs {
         // Already finalized
         if input.final_script_witness.is_some() || input.final_script_sig.is_some() {
@@ -216,9 +216,6 @@ fn finalize_psbt(psbt: &mut Psbt) -> Result<()> {
             input.final_script_witness = Some(witness);
             input.partial_sigs.clear();
             input.redeem_script = None;
-            continue;
         }
     }
-
-    Ok(())
 }

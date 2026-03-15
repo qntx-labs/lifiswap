@@ -26,10 +26,10 @@ use crate::tasks::{BtcConfirmTask, BtcSignTask};
 ///
 /// Constructs a task pipeline that:
 /// 1. Checks the wallet balance
-/// 2. Prepares the transaction via the LiFi API
+/// 2. Prepares the transaction via the `LiFi` API
 /// 3. Signs the PSBT and broadcasts the raw transaction
 /// 4. Waits for on-chain confirmation
-/// 5. Waits for the LiFi status API to report completion
+/// 5. Waits for the `LiFi` status API to report completion
 pub struct BtcStepExecutor {
     signer: Arc<dyn BtcSigner>,
     api: BlockchainApi,
@@ -90,15 +90,15 @@ impl StepExecutor for BtcStepExecutor {
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
             let signer_address = self.signer.address().to_string();
-            if let Some(ref from_address) = step.action.from_address {
-                if !from_address.eq_ignore_ascii_case(&signer_address) {
-                    return Err(LiFiError::Transaction {
-                        code: LiFiErrorCode::WalletChangedDuringExecution,
-                        message: "The wallet address that requested the quote does not match \
-                                  the wallet address attempting to sign the transaction."
-                            .to_owned(),
-                    });
-                }
+            if let Some(ref from_address) = step.action.from_address
+                && !from_address.eq_ignore_ascii_case(&signer_address)
+            {
+                return Err(LiFiError::Transaction {
+                    code: LiFiErrorCode::WalletChangedDuringExecution,
+                    message: "The wallet address that requested the quote does not match \
+                              the wallet address attempting to sign the transaction."
+                        .to_owned(),
+                });
             }
 
             let status_manager = StatusManager::new(
@@ -158,6 +158,6 @@ impl StepExecutor for BtcStepExecutor {
     }
 
     fn allow_execution(&self) -> bool {
-        self.interaction.allow_interaction
+        self.interaction.allow_execution
     }
 }

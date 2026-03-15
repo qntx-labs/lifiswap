@@ -5,7 +5,7 @@
 //!
 //! # Architecture
 //!
-//! - [`BtcProvider`] — implements [`lifiswap::Provider`] for Bitcoin (ChainType::UTXO)
+//! - [`BtcProvider`] — implements [`lifiswap::Provider`] for Bitcoin (`ChainType::UTXO`)
 //! - [`BtcSigner`] — trait abstracting PSBT signing (local keypair, hardware wallet, etc.)
 //! - [`KeypairSigner`] — local private-key based signer for server/CLI usage
 //! - [`BlockchainApi`] — REST API client for mempool.space with multi-backend fallback

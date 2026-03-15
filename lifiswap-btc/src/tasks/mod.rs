@@ -7,7 +7,7 @@ pub use confirm::BtcConfirmTask;
 pub use sign::BtcSignTask;
 
 /// Construct a block explorer transaction link.
-pub(crate) fn get_tx_link(chain: &lifiswap::types::Chain, tx_hash: &str) -> Option<String> {
+pub fn get_tx_link(chain: &lifiswap::types::Chain, tx_hash: &str) -> Option<String> {
     chain
         .metamask
         .as_ref()
@@ -17,7 +17,8 @@ pub(crate) fn get_tx_link(chain: &lifiswap::types::Chain, tx_hash: &str) -> Opti
 }
 
 /// Current timestamp in milliseconds.
-pub(crate) fn now_ms() -> u64 {
+#[allow(clippy::cast_possible_truncation)]
+pub fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

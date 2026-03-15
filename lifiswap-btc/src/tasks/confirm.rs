@@ -28,7 +28,7 @@ impl std::fmt::Debug for BtcConfirmTask {
 }
 
 impl BtcConfirmTask {
-    pub(crate) fn new(api: BlockchainApi) -> Self {
+    pub(crate) const fn new(api: BlockchainApi) -> Self {
         Self { api }
     }
 }
@@ -69,20 +69,19 @@ impl ExecutionTask for BtcConfirmTask {
                 ExecutionActionType::Swap
             };
 
-            let action = ctx
+            let tx_hash = ctx
                 .status_manager
                 .find_action(ctx.step, action_type)
+                .and_then(|a| a.tx_hash.clone())
                 .ok_or(LiFiError::Transaction {
                     code: LiFiErrorCode::TransactionUnprepared,
-                    message: "Unable to confirm transaction. Action not found.".to_owned(),
+                    message: "Transaction hash not set.".to_owned(),
                 })?;
 
-            let tx_hash = action.tx_hash.as_ref().ok_or(LiFiError::Transaction {
-                code: LiFiErrorCode::TransactionUnprepared,
-                message: "Transaction hash not set.".to_owned(),
-            })?;
-
-            tracing::info!(tx_hash, "Waiting for Bitcoin transaction confirmation");
+            tracing::info!(
+                tx_hash = tx_hash.as_str(),
+                "Waiting for Bitcoin transaction confirmation"
+            );
 
             let deadline = tokio::time::Instant::now() + CONFIRM_TIMEOUT;
 
@@ -94,31 +93,38 @@ impl ExecutionTask for BtcConfirmTask {
                     });
                 }
 
-                match self.api.get_tx_status(tx_hash).await {
+                let confirmed = match self.api.get_tx_status(&tx_hash).await {
                     Ok(status) if status.confirmed => {
                         tracing::info!(
-                            tx_hash,
+                            tx_hash = tx_hash.as_str(),
                             block_height = ?status.block_height,
                             "Bitcoin transaction confirmed"
                         );
-
-                        if ctx.is_bridge_execution {
-                            ctx.status_manager.update_action(
-                                ctx.step,
-                                action_type,
-                                ExecutionActionStatus::Done,
-                                None,
-                            )?;
-                        }
-
-                        return Ok(TaskStatus::Completed);
+                        true
                     }
                     Ok(_) => {
-                        tracing::debug!(tx_hash, "Transaction not yet confirmed, polling...");
+                        tracing::debug!(
+                            tx_hash = tx_hash.as_str(),
+                            "Transaction not yet confirmed, polling..."
+                        );
+                        false
                     }
                     Err(e) => {
-                        tracing::warn!(tx_hash, error = %e, "Failed to check tx status");
+                        tracing::warn!(tx_hash = tx_hash.as_str(), error = %e, "Failed to check tx status");
+                        false
                     }
+                };
+
+                if confirmed && ctx.is_bridge_execution {
+                    ctx.status_manager.update_action(
+                        ctx.step,
+                        action_type,
+                        ExecutionActionStatus::Done,
+                        None,
+                    )?;
+                }
+                if confirmed {
+                    return Ok(TaskStatus::Completed);
                 }
 
                 tokio::time::sleep(POLL_INTERVAL).await;
