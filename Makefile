@@ -6,7 +6,7 @@ all: pre-commit
 # Build the project with all features enabled in release mode
 .PHONY: build
 build:
-	cargo build --release --all-features
+	cargo build --workspace --release --all-features
 
 # Update dependencies to their latest compatible versions
 .PHONY: update
@@ -21,18 +21,27 @@ run:
 # Run all tests with all features enabled
 .PHONY: test
 test:
-	cargo test --all-features
+	cargo test --workspace --all-features
 
 # Run benchmarks with all features enabled
 .PHONY: bench
 bench:
 	cargo bench --all-features
 
-# Run Clippy linter with nightly toolchain, fixing issues automatically
-# and applying strict linting rules (uses workspace lints from Cargo.toml)
+# Run Clippy linter with nightly toolchain (check only, for CI)
+# Uses workspace lints from Cargo.toml
 .PHONY: clippy
 clippy:
-	cargo +nightly clippy --fix \
+	cargo +nightly clippy --workspace \
+		--all-targets \
+		--all-features \
+		-- -D warnings
+
+# Run Clippy linter with auto-fix (for development)
+.PHONY: clippy-fix
+clippy-fix:
+	cargo +nightly clippy --workspace \
+		--fix \
 		--all-targets \
 		--all-features \
 		--allow-dirty \
@@ -97,7 +106,7 @@ wasm: wasm-publish
 pre-commit:
 	$(MAKE) build
 	$(MAKE) test
-	$(MAKE) clippy
+	$(MAKE) clippy-fix
 	$(MAKE) fmt
 	$(MAKE) cliff
 	$(MAKE) udeps-check
