@@ -51,6 +51,13 @@ impl EvmBatchedSignAndExecuteTask {
 }
 
 impl ExecutionTask for EvmBatchedSignAndExecuteTask {
+    fn should_run<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+        Box::pin(async move { !ctx.has_committed_transaction() })
+    }
+
     fn run<'a>(
         &'a self,
         ctx: &'a mut ExecutionContext<'_>,

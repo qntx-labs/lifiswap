@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use alloy::primitives::Address;
 use lifiswap::LiFiClient;
-use lifiswap::error::Result;
+use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::execution::status::StatusManager;
 use lifiswap::execution::task::{ExecutionContext, TaskPipeline};
 use lifiswap::execution::tasks::{
@@ -52,6 +52,7 @@ pub struct EvmStepExecutor {
     options: StepExecutorOptions,
     interaction: InteractionSettings,
     permit2: Option<Permit2Config>,
+    disable_message_signing: bool,
 }
 
 impl std::fmt::Debug for EvmStepExecutor {
@@ -72,6 +73,7 @@ impl EvmStepExecutor {
         rpc_url: url::Url,
         options: StepExecutorOptions,
         permit2: Option<Permit2Config>,
+        disable_message_signing: bool,
     ) -> Self {
         Self {
             signer,
@@ -79,6 +81,7 @@ impl EvmStepExecutor {
             options,
             interaction: InteractionSettings::default(),
             permit2,
+            disable_message_signing,
         }
     }
 
@@ -88,9 +91,17 @@ impl EvmStepExecutor {
 
         let mut tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = Vec::new();
 
-        tasks.push(Box::new(EvmCheckPermitsTask::new(Arc::clone(&self.signer))));
+        if !self.disable_message_signing {
+            tasks.push(Box::new(EvmCheckPermitsTask::new(Arc::clone(&self.signer))));
+        }
 
-        let is_batched = !is_relay && self.signer.supports_batching();
+        // Exclude tools that don't support batching (e.g. thorswap)
+        const BATCH_EXCLUDED_TOOLS: &[&str] = &["thorswap"];
+        let tool_supports_batching = step
+            .tool
+            .as_deref()
+            .is_none_or(|t| !BATCH_EXCLUDED_TOOLS.contains(&t));
+        let is_batched = !is_relay && self.signer.supports_batching() && tool_supports_batching;
 
         if is_relay {
             tasks.push(Box::new(PrepareTransactionTask));
@@ -144,6 +155,21 @@ impl StepExecutor for EvmStepExecutor {
         from_chain: &'a Chain,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
+            // Verify signer address matches the step's fromAddress
+            if let Some(ref from_addr) = step.action.from_address {
+                let expected: Address = from_addr.parse().map_err(|_| {
+                    LiFiError::Validation(format!("Invalid fromAddress: {from_addr}"))
+                })?;
+                if expected != self.signer.address() {
+                    return Err(LiFiError::Transaction {
+                        code: LiFiErrorCode::WalletChangedDuringExecution,
+                        message: "The wallet address that requested the quote does not match \
+                                  the wallet address attempting to sign the transaction."
+                            .to_owned(),
+                    });
+                }
+            }
+
             let status_manager = StatusManager::new(
                 self.options.route_id.clone(),
                 client.execution_state().clone(),
@@ -166,7 +192,10 @@ impl StepExecutor for EvmStepExecutor {
                 signed_typed_data: Vec::new(),
             };
 
-            pipeline.run(&mut ctx).await?;
+            pipeline
+                .run(&mut ctx)
+                .await
+                .map_err(crate::errors::parse_evm_error)?;
 
             Ok(())
         })

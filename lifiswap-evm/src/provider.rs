@@ -221,6 +221,7 @@ impl Provider for EvmProvider {
                 self.rpc_url.clone(),
                 options,
                 permit2,
+                self.disable_message_signing,
             ));
             Ok(executor)
         })

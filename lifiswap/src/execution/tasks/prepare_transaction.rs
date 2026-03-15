@@ -57,6 +57,13 @@ const PATCHER_MAGIC_NUMBER: &str = "314159265359";
 pub struct PrepareTransactionTask;
 
 impl ExecutionTask for PrepareTransactionTask {
+    fn should_run<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+        Box::pin(async move { !ctx.has_committed_transaction() })
+    }
+
     fn run<'a>(
         &'a self,
         ctx: &'a mut ExecutionContext<'_>,

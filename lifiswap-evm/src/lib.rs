@@ -21,6 +21,7 @@
 //! let result = execute_route(&client, route, &[Box::new(provider)], Default::default()).await?;
 //! ```
 
+mod errors;
 mod executor;
 pub mod permit2;
 mod provider;

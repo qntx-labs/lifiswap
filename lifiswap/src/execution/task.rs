@@ -7,7 +7,9 @@ use super::status::StatusManager;
 use crate::LiFiClient;
 use crate::error::Result;
 use crate::provider::Provider;
-use crate::types::{Chain, ExecutionOptions, LiFiStepExtended, SignedTypedData, TaskStatus};
+use crate::types::{
+    Chain, ExecutionActionType, ExecutionOptions, LiFiStepExtended, SignedTypedData, TaskStatus,
+};
 
 /// Context passed to each task in the execution pipeline.
 pub struct ExecutionContext<'a> {
@@ -31,6 +33,24 @@ pub struct ExecutionContext<'a> {
     pub from_chain: &'a Chain,
     /// Signed typed data accumulated during the pipeline (permits, etc.).
     pub signed_typed_data: Vec<SignedTypedData>,
+}
+
+impl ExecutionContext<'_> {
+    /// Whether the swap/bridge action already has a committed on-chain
+    /// transaction (`tx_hash` or `task_id`).
+    ///
+    /// Used by tasks to skip re-execution on resume.
+    #[must_use]
+    pub fn has_committed_transaction(&self) -> bool {
+        self.step.execution.as_ref().is_some_and(|exec| {
+            exec.actions.iter().any(|a| {
+                matches!(
+                    a.action_type,
+                    ExecutionActionType::Swap | ExecutionActionType::CrossChain
+                ) && (a.tx_hash.is_some() || a.task_id.is_some())
+            })
+        })
+    }
 }
 
 impl std::fmt::Debug for ExecutionContext<'_> {
