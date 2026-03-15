@@ -87,6 +87,12 @@ pub struct Estimate {
     /// Gas costs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas_costs: Option<Vec<GasCost>>,
+    /// Whether to skip the approval step entirely (e.g. direct transfers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_approval: Option<bool>,
+    /// Whether to skip Permit2 signing (fall back to standard allowance).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_permit: Option<bool>,
 }
 
 /// An included sub-step within a `LiFi` step.

@@ -3225,7 +3225,7 @@ dependencies = [
 
 [[package]]
 name = "lifiswap"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "backon",
  "bon",
@@ -3242,18 +3242,18 @@ dependencies = [
 
 [[package]]
 name = "lifiswap-btc"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "lifiswap",
 ]
 
 [[package]]
 name = "lifiswap-cli"
-version = "0.2.2"
+version = "0.2.3"
 
 [[package]]
 name = "lifiswap-evm"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "alloy",
  "lifiswap",
@@ -3265,14 +3265,14 @@ dependencies = [
 
 [[package]]
 name = "lifiswap-sui"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "lifiswap",
 ]
 
 [[package]]
 name = "lifiswap-svm"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "lifiswap",
 ]

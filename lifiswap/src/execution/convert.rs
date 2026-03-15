@@ -170,6 +170,8 @@ mod tests {
                 execution_duration: Some(30.0),
                 fee_costs: None,
                 gas_costs: None,
+                skip_approval: None,
+                skip_permit: None,
             }),
             included_steps: None,
             integrator: None,
