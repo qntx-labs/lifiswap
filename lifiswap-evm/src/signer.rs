@@ -108,6 +108,15 @@ pub trait EvmSigner: Send + Sync + std::fmt::Debug + 'static {
         })
     }
 
+    /// Whether this is a local account (private key signer).
+    ///
+    /// Local accounts need `maxPriorityFeePerGas` to be fetched from the
+    /// network, since they construct and sign the full transaction locally.
+    /// JSON-RPC wallets handle gas estimation internally.
+    fn is_local_account(&self) -> bool {
+        false
+    }
+
     /// Switch the signer to the given chain ID.
     ///
     /// Called before signing typed data for permits whose EIP-712 domain
@@ -181,6 +190,10 @@ impl LocalSigner {
 impl EvmSigner for LocalSigner {
     fn address(&self) -> Address {
         self.signer.address()
+    }
+
+    fn is_local_account(&self) -> bool {
+        true
     }
 
     fn send_transaction<'a>(

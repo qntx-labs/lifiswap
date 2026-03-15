@@ -66,6 +66,17 @@ async fn estimate_gas(rpc_url: &url::Url, tx: &TransactionRequest, from: Address
     }
 }
 
+/// Fetch `maxPriorityFeePerGas` via `eth_maxPriorityFeePerGas` RPC.
+///
+/// Returns `None` if the RPC call fails (non-fatal).
+async fn fetch_max_priority_fee(rpc_url: &url::Url) -> Option<u128> {
+    ProviderBuilder::new()
+        .connect_http(rpc_url.clone())
+        .get_max_priority_fee_per_gas()
+        .await
+        .ok()
+}
+
 /// Send an ERC-20 `approve` transaction via the signer and wait for confirmation.
 async fn send_approve(
     signer: &dyn EvmSigner,
@@ -626,6 +637,12 @@ impl ExecutionTask for EvmSignAndExecuteTask {
 
             if let Some(chain_id) = api_tx.chain_id {
                 tx.set_chain_id(chain_id);
+            }
+
+            if self.signer.is_local_account() {
+                if let Some(fee) = fetch_max_priority_fee(&self.rpc_url).await {
+                    tx.set_max_priority_fee_per_gas(fee);
+                }
             }
 
             if is_permit2_wrapped {
