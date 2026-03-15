@@ -4,13 +4,33 @@ use std::future::Future;
 use std::pin::Pin;
 
 use alloy::network::EthereumWallet;
-use alloy::primitives::{Address, B256};
+use alloy::primitives::{Address, B256, Bytes, U256};
 use alloy::providers::{Provider as _, ProviderBuilder};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 use alloy::signers::Signer as _;
 use alloy::signers::local::PrivateKeySigner;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::types::TypedData;
+
+/// A single call within an EIP-5792 batch.
+#[derive(Debug, Clone)]
+pub struct BatchCall {
+    /// Target address.
+    pub to: Address,
+    /// Calldata.
+    pub data: Bytes,
+    /// Native token value.
+    pub value: U256,
+}
+
+/// Receipt for a single call within a batch.
+#[derive(Debug, Clone, Copy)]
+pub struct BatchCallReceipt {
+    /// Transaction hash.
+    pub tx_hash: B256,
+    /// Whether the transaction succeeded.
+    pub success: bool,
+}
 
 /// Abstraction for EVM transaction signing and broadcasting.
 ///
@@ -84,6 +104,45 @@ pub trait EvmSigner: Send + Sync + std::fmt::Debug + 'static {
             Err(LiFiError::Transaction {
                 code: LiFiErrorCode::InternalError,
                 message: "This signer does not support EIP-712 typed data signing.".to_owned(),
+            })
+        })
+    }
+
+    /// Whether this signer supports EIP-5792 batch calls (`wallet_sendCalls`).
+    ///
+    /// When `true`, the execution pipeline batches approve + swap calls
+    /// into a single atomic submission.
+    fn supports_batching(&self) -> bool {
+        false
+    }
+
+    /// Submit a batch of calls via EIP-5792 `wallet_sendCalls`.
+    ///
+    /// Returns a batch identifier that can be polled via [`get_calls_status`](Self::get_calls_status).
+    fn send_calls<'a>(
+        &'a self,
+        _calls: Vec<BatchCall>,
+    ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
+        Box::pin(async {
+            Err(LiFiError::Transaction {
+                code: LiFiErrorCode::InternalError,
+                message: "This signer does not support EIP-5792 batch calls.".to_owned(),
+            })
+        })
+    }
+
+    /// Poll the status of a batch submitted via [`send_calls`](Self::send_calls).
+    ///
+    /// Returns `Ok(receipts)` once the batch is confirmed. The last receipt
+    /// in the list corresponds to the main transaction.
+    fn get_calls_status<'a>(
+        &'a self,
+        _batch_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<BatchCallReceipt>>> + Send + 'a>> {
+        Box::pin(async {
+            Err(LiFiError::Transaction {
+                code: LiFiErrorCode::InternalError,
+                message: "This signer does not support EIP-5792 batch status.".to_owned(),
             })
         })
     }

@@ -283,9 +283,9 @@ async fn get_contract_call_updated_step(
             && let Some(custom) = included
                 .iter_mut()
                 .find(|s| s.step_type == StepType::Custom)
-            {
-                custom.tool_details = Some(tool_details.clone());
-            }
+        {
+            custom.tool_details = Some(tool_details.clone());
+        }
         quote.tool_details = Some(tool_details);
     }
 

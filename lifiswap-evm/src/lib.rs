@@ -32,7 +32,7 @@ use alloy::primitives::Address;
 pub use executor::Permit2Config;
 pub use provider::EvmProvider;
 pub use rpc::{RpcUrlResolver, StaticRpcUrls};
-pub use signer::{EvmSigner, LocalSigner};
+pub use signer::{BatchCall, BatchCallReceipt, EvmSigner, LocalSigner};
 
 /// Check whether a token address represents the native token (ETH).
 pub(crate) fn is_native_token(address: &str) -> bool {

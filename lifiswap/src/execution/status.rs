@@ -7,7 +7,7 @@ use super::state::ExecutionState;
 use crate::error::{LiFiError, Result};
 use crate::types::{
     ExecutionAction, ExecutionActionStatus, ExecutionActionType, ExecutionError, ExecutionStatus,
-    LiFiStepExtended, StepExecution,
+    LiFiStepExtended, StepExecution, TransactionMethodType,
 };
 
 fn now_ms() -> u64 {
@@ -265,6 +265,12 @@ impl StatusManager {
                 if let Some(msg) = p.substatus_message {
                     action.substatus_message = Some(msg);
                 }
+                if let Some(task_id) = p.task_id {
+                    action.task_id = Some(task_id);
+                }
+                if let Some(tx_type) = p.tx_type {
+                    action.tx_type = Some(tx_type);
+                }
             }
         }
 
@@ -336,6 +342,10 @@ pub struct ActionUpdateParams {
     pub substatus: Option<String>,
     /// Substatus message.
     pub substatus_message: Option<String>,
+    /// Task ID (for relay/batched transactions).
+    pub task_id: Option<String>,
+    /// Transaction method type (standard, relayed, batched).
+    pub tx_type: Option<TransactionMethodType>,
 }
 
 #[cfg(test)]

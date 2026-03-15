@@ -19,7 +19,8 @@ use lifiswap::types::{
 
 use crate::signer::EvmSigner;
 use crate::tasks::{
-    EvmAllowanceTask, EvmCheckPermitsTask, EvmRelaySignAndExecuteTask, EvmSignAndExecuteTask,
+    EvmAllowanceTask, EvmBatchedSignAndExecuteTask, EvmCheckPermitsTask,
+    EvmRelaySignAndExecuteTask, EvmSignAndExecuteTask,
 };
 
 /// Permit2 contract addresses for a chain.
@@ -89,11 +90,21 @@ impl EvmStepExecutor {
 
         tasks.push(Box::new(EvmCheckPermitsTask::new(Arc::clone(&self.signer))));
 
+        let is_batched = !is_relay && self.signer.supports_batching();
+
         if is_relay {
             tasks.push(Box::new(PrepareTransactionTask));
             tasks.push(Box::new(EvmRelaySignAndExecuteTask::new(Arc::clone(
                 &self.signer,
             ))));
+        } else if is_batched {
+            tasks.push(Box::new(CheckBalanceTask));
+            tasks.push(Box::new(PrepareTransactionTask));
+            tasks.push(Box::new(EvmBatchedSignAndExecuteTask::new(
+                Arc::clone(&self.signer),
+                self.rpc_url.clone(),
+                self.permit2,
+            )));
         } else {
             tasks.push(Box::new(CheckBalanceTask));
             tasks.push(Box::new(EvmAllowanceTask::new(
