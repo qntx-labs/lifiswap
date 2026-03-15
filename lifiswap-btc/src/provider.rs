@@ -26,7 +26,7 @@ use crate::signer::BtcSigner;
 /// use lifiswap_btc::{BtcProvider, KeypairSigner};
 ///
 /// let key = PrivateKey::generate(Network::Bitcoin);
-/// let signer = KeypairSigner::new(key);
+/// let signer = KeypairSigner::new(key, Network::Bitcoin);
 /// let provider = BtcProvider::new(signer);
 /// ```
 #[derive(Clone)]
@@ -80,11 +80,11 @@ impl Provider for BtcProvider {
 
     fn resolve_address<'a>(
         &'a self,
-        _name: &'a str,
+        name: &'a str,
         _chain_id: Option<u64>,
     ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
-        // Bitcoin does not support domain name resolution
-        Box::pin(async { Ok(None) })
+        // Bitcoin does not support domain name resolution — pass through as-is
+        Box::pin(async { Ok(Some(name.to_owned())) })
     }
 
     fn get_balance<'a>(

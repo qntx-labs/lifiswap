@@ -6,15 +6,14 @@ use std::sync::{Arc, Mutex};
 
 use lifiswap::LiFiClient;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
-use lifiswap::execution::status::{ExecutionUpdate, StatusManager};
-use lifiswap::execution::task::{ExecutionContext, TaskPipeline};
+use lifiswap::execution::run::run_step_pipeline;
+use lifiswap::execution::task::TaskPipeline;
 use lifiswap::execution::tasks::{
     CheckBalanceTask, PrepareTransactionTask, WaitForTransactionStatusTask,
 };
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{
-    Chain, ExecutionError, ExecutionOptions, ExecutionStatus, InteractionSettings,
-    LiFiStepExtended, StepExecutorOptions,
+    Chain, ExecutionOptions, InteractionSettings, LiFiStepExtended, StepExecutorOptions,
 };
 use solana_sdk::transaction::VersionedTransaction;
 
@@ -103,7 +102,6 @@ impl StepExecutor for SvmStepExecutor {
         from_chain: &'a Chain,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
-            // Verify signer pubkey matches the step's fromAddress
             if let Some(ref from_addr) = step.action.from_address {
                 let expected = from_addr
                     .parse::<solana_sdk::pubkey::Pubkey>()
@@ -120,64 +118,21 @@ impl StepExecutor for SvmStepExecutor {
                 }
             }
 
-            let status_manager = StatusManager::new(
-                self.options.route_id.clone(),
-                client.execution_state().clone(),
-            );
-            status_manager.initialize_execution(step);
-
             let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
             let pipeline = self.build_pipeline(is_bridge);
 
-            let mut ctx = ExecutionContext {
+            run_step_pipeline(
                 client,
                 step,
-                status_manager: &status_manager,
                 provider,
-                route_id: &self.options.route_id,
                 execution_options,
-                is_bridge_execution: is_bridge,
-                allow_user_interaction: self.interaction.allow_interaction,
                 from_chain,
-                signed_typed_data: Vec::new(),
-            };
-
-            let result = pipeline.run(&mut ctx).await;
-
-            if let Err(err) = result {
-                let parsed = crate::errors::parse_solana_error(err);
-
-                if !matches!(parsed, LiFiError::StepRetry { .. }) {
-                    let exec_error = error_to_execution_error(&parsed);
-                    let last_action_type =
-                        ctx.step.execution.as_ref().and_then(|e| e.last_action_type);
-
-                    if let Some(action_type) = last_action_type {
-                        let _ = status_manager.update_action(
-                            ctx.step,
-                            action_type,
-                            lifiswap::types::ExecutionActionStatus::Failed,
-                            Some(lifiswap::execution::status::ActionUpdateParams {
-                                error: Some(exec_error),
-                                ..Default::default()
-                            }),
-                        );
-                    } else {
-                        status_manager.update_execution(
-                            ctx.step,
-                            ExecutionUpdate {
-                                status: Some(ExecutionStatus::Failed),
-                                error: Some(exec_error),
-                                ..Default::default()
-                            },
-                        );
-                    }
-                }
-
-                return Err(parsed);
-            }
-
-            Ok(())
+                &self.options,
+                self.interaction.allow_interaction,
+                pipeline,
+                crate::errors::parse_solana_error,
+            )
+            .await
         })
     }
 
@@ -187,19 +142,5 @@ impl StepExecutor for SvmStepExecutor {
 
     fn allow_execution(&self) -> bool {
         self.interaction.allow_execution
-    }
-}
-
-fn error_to_execution_error(err: &LiFiError) -> ExecutionError {
-    let code = match err {
-        LiFiError::Transaction { code, .. } | LiFiError::Provider { code, .. } => code.to_string(),
-        LiFiError::Http(details) => details.code.to_string(),
-        LiFiError::Balance(_) => "1013".to_owned(),
-        _ => "1000".to_owned(),
-    };
-    ExecutionError {
-        code,
-        message: err.to_string(),
-        html_message: None,
     }
 }

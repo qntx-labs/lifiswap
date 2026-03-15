@@ -18,7 +18,7 @@
 //! use lifiswap_btc::{BtcProvider, KeypairSigner};
 //!
 //! let key = PrivateKey::generate(Network::Bitcoin);
-//! let signer = KeypairSigner::new(key);
+//! let signer = KeypairSigner::new(key, Network::Bitcoin);
 //! let provider = BtcProvider::new(signer);
 //! ```
 

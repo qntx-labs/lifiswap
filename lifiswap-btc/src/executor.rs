@@ -6,19 +6,17 @@ use std::sync::Arc;
 
 use lifiswap::LiFiClient;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
-use lifiswap::execution::status::{ExecutionUpdate, StatusManager};
-use lifiswap::execution::task::{ExecutionContext, TaskPipeline};
+use lifiswap::execution::run::run_step_pipeline;
+use lifiswap::execution::task::TaskPipeline;
 use lifiswap::execution::tasks::{
     CheckBalanceTask, PrepareTransactionTask, WaitForTransactionStatusTask,
 };
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{
-    Chain, ExecutionError, ExecutionOptions, ExecutionStatus, InteractionSettings,
-    LiFiStepExtended, StepExecutorOptions,
+    Chain, ExecutionOptions, InteractionSettings, LiFiStepExtended, StepExecutorOptions,
 };
 
 use crate::api::BlockchainApi;
-use crate::errors::parse_bitcoin_error;
 use crate::signer::BtcSigner;
 use crate::tasks::{BtcConfirmTask, BtcSignTask};
 
@@ -101,55 +99,21 @@ impl StepExecutor for BtcStepExecutor {
                 });
             }
 
-            let status_manager = StatusManager::new(
-                self.options.route_id.clone(),
-                client.execution_state().clone(),
-            );
-            status_manager.initialize_execution(step);
-
             let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
             let pipeline = self.build_pipeline(is_bridge);
 
-            let mut ctx = ExecutionContext {
+            run_step_pipeline(
                 client,
                 step,
-                status_manager: &status_manager,
                 provider,
-                route_id: &self.options.route_id,
                 execution_options,
-                is_bridge_execution: is_bridge,
-                allow_user_interaction: self.interaction.allow_interaction,
                 from_chain,
-                signed_typed_data: vec![],
-            };
-
-            let result = pipeline.run(&mut ctx).await;
-
-            if let Err(ref e) = result {
-                let error_msg = e.to_string();
-                let parsed = parse_bitcoin_error(&error_msg);
-                let (code, message) = match &parsed {
-                    LiFiError::Transaction { code, message } => {
-                        ((*code as u16).to_string(), message.clone())
-                    }
-                    _ => ((LiFiErrorCode::InternalError as u16).to_string(), error_msg),
-                };
-
-                status_manager.update_execution(
-                    ctx.step,
-                    ExecutionUpdate {
-                        status: Some(ExecutionStatus::Failed),
-                        error: Some(ExecutionError {
-                            code,
-                            message,
-                            html_message: None,
-                        }),
-                        ..Default::default()
-                    },
-                );
-            }
-
-            result.map(|_| ())
+                &self.options,
+                self.interaction.allow_interaction,
+                pipeline,
+                crate::errors::parse_bitcoin_error,
+            )
+            .await
         })
     }
 

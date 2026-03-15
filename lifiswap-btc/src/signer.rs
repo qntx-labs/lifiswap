@@ -47,7 +47,6 @@ pub trait BtcSigner: Send + Sync + 'static {
 #[derive(Debug, Clone)]
 pub struct KeypairSigner {
     private_key: PrivateKey,
-    bitcoin_pubkey: PublicKey,
     public_key: CompressedPublicKey,
     address: Address,
     secp: Secp256k1<All>,
@@ -60,11 +59,9 @@ impl KeypairSigner {
         let secp = Secp256k1::new();
         let secp_pubkey = private_key.inner.public_key(&secp);
         let public_key = CompressedPublicKey(secp_pubkey);
-        let bitcoin_pubkey = PublicKey::new(secp_pubkey);
         let address = Address::p2wpkh(&public_key, network);
         Self {
             private_key,
-            bitcoin_pubkey,
             public_key,
             address,
             secp,
@@ -99,7 +96,7 @@ impl BtcSigner for KeypairSigner {
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
             let mut keys = BTreeMap::new();
-            keys.insert(self.bitcoin_pubkey, self.private_key);
+            keys.insert(PublicKey::new(self.public_key.0), self.private_key);
 
             psbt.sign(&keys, &self.secp).map_err(|(_, sign_errors)| {
                 let msg = sign_errors

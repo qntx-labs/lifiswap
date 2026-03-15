@@ -5,16 +5,13 @@
 
 use lifiswap::error::{LiFiError, LiFiErrorCode};
 
-/// Parse a Bitcoin error message into an appropriate [`LiFiError`].
+/// Classify a Bitcoin error into an appropriate [`LiFiError`].
 ///
-/// Categorizes common Bitcoin errors:
-/// - Mempool conflicts → `TransactionConflict`
-/// - Signature rejection (code 4001 / -32000 / "rejected") → `SignatureRejected`
-/// - Not found (code -5 / -32700) → `NotFound`
-/// - Everything else → `InternalError`
-#[must_use]
-pub fn parse_bitcoin_error(error: &str) -> LiFiError {
-    let lower = error.to_ascii_lowercase();
+/// Called by the step executor to wrap errors before propagating
+/// them to the execution engine.
+pub fn parse_bitcoin_error(error: LiFiError) -> LiFiError {
+    let msg = error.to_string();
+    let lower = msg.to_ascii_lowercase();
 
     if lower.contains("conflict") {
         return LiFiError::Transaction {
@@ -31,7 +28,7 @@ pub fn parse_bitcoin_error(error: &str) -> LiFiError {
     {
         return LiFiError::Transaction {
             code: LiFiErrorCode::SignatureRejected,
-            message: error.to_owned(),
+            message: msg,
         };
     }
 
@@ -42,19 +39,16 @@ pub fn parse_bitcoin_error(error: &str) -> LiFiError {
     {
         return LiFiError::Transaction {
             code: LiFiErrorCode::NotFound,
-            message: error.to_owned(),
+            message: msg,
         };
     }
 
     if lower.contains("insufficient") || lower.contains("not enough") {
         return LiFiError::Transaction {
             code: LiFiErrorCode::InsufficientFunds,
-            message: error.to_owned(),
+            message: msg,
         };
     }
 
-    LiFiError::Transaction {
-        code: LiFiErrorCode::InternalError,
-        message: error.to_owned(),
-    }
+    error
 }
