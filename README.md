@@ -67,55 +67,26 @@ irm https://sh.qntx.fun/labs/lifiswap/ps | iex
 
 ### One-Line Swap
 
-The simplest way to perform a cross-chain swap — one method call does everything: fetch the optimal quote from LI.FI's smart routing API, convert it to a route, check balances, approve tokens, sign transactions, and poll for completion.
-
 ```rust
-use lifiswap::{LiFiClient, LiFiConfig};
-use lifiswap::types::QuoteRequest;
-use lifiswap_evm::EvmProvider;
-use alloy::signers::local::PrivateKeySigner;
+let client = LiFiClient::new(LiFiConfig::builder().integrator("my-app").build())?;
+client.add_provider(EvmProvider::new(LocalSigner::new(key, rpc.clone()), rpc));
 
-#[tokio::main]
-async fn main() -> lifiswap::error::Result<()> {
-    // Create client
-    let client = LiFiClient::new(
-        LiFiConfig::builder().integrator("my-app").build(),
-    )?;
-
-    // Register chain provider
-    let signer: PrivateKeySigner = "0xac0974...".parse().expect("valid key");
-    client.add_provider(EvmProvider::new(signer, "https://eth.llamarpc.com"));
-
-    // Swap — that's it
-    let result = client
-        .swap(
-            &QuoteRequest::builder()
-                .from_chain("42161")                                      // Arbitrum
-                .from_token("0xaf88d065e77c8cC2239327C5EDb3A432268e5831") // USDC
-                .from_address("0xYourWallet")
-                .from_amount("10000000")                                  // 10 USDC
-                .to_chain("10")                                           // Optimism
-                .to_token("0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1")   // DAI
-                .build(),
-            Default::default(),
-        )
-        .await?;
-
-    eprintln!("done: route {}", result.id);
-    Ok(())
-}
+let result = client.swap(
+    &QuoteRequest::builder()
+        .from_chain("42161").from_token(USDC_ARB)
+        .from_address(&wallet).from_amount("1000000")
+        .to_chain("8453").to_token(USDC_BASE)
+        .build(),
+    Default::default(),
+).await?;
 ```
 
 ### Step-by-Step Control
 
-For more control, break the flow into individual steps:
-
 ```rust
-// Get a quote, then execute it
 let quote = client.get_quote(&request).await?;
 let result = client.execute_quote(quote, Default::default()).await?;
 
-// Or: get multiple routes, pick one, then execute
 let routes = client.get_routes(&routes_request).await?;
 let best = routes.routes.into_iter().next().expect("at least one route");
 let result = client.execute_route(best, Default::default()).await?;
@@ -123,19 +94,17 @@ let result = client.execute_route(best, Default::default()).await?;
 
 ### Query-Only Usage
 
-No providers needed for read-only API calls:
-
 ```rust
-use lifiswap::{LiFiClient, LiFiConfig};
-
-let client = LiFiClient::new(
-    LiFiConfig::builder().integrator("my-app").build(),
-)?;
-
+let client = LiFiClient::new(LiFiConfig::builder().integrator("my-app").build())?;
 let chains = client.get_chains(None).await?;
 let tokens = client.get_tokens(None).await?;
-let tools = client.get_tools(None).await?;
 ```
+
+> See [`examples/`](lifiswap-evm/examples/) for complete runnable demos:
+> [`swap`](lifiswap-evm/examples/swap.rs) ·
+> [`cross_chain_usdc`](lifiswap-evm/examples/cross_chain_usdc.rs) ·
+> [`compare_routes`](lifiswap-evm/examples/compare_routes.rs) ·
+> [`query_only`](lifiswap-evm/examples/query_only.rs)
 
 ## Architecture
 
