@@ -241,8 +241,8 @@ async fn get_contract_call_updated_step(
         let patched = ctx.client.patch_contract_calls(&entries).await?;
 
         for (call, patch) in contract_calls.iter_mut().zip(patched.iter()) {
-            call.to_contract_address = patch.target.clone();
-            call.to_contract_call_data = patch.call_data.clone();
+            call.to_contract_address.clone_from(&patch.target);
+            call.to_contract_call_data.clone_from(&patch.call_data);
         }
     }
 
