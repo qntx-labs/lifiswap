@@ -136,6 +136,7 @@ async fn apply_tx_hook(
 pub struct EvmAllowanceTask {
     signer: Arc<dyn EvmSigner>,
     rpc_url: url::Url,
+    permit2: Option<Permit2Config>,
 }
 
 impl std::fmt::Debug for EvmAllowanceTask {
@@ -148,8 +149,16 @@ impl std::fmt::Debug for EvmAllowanceTask {
 
 impl EvmAllowanceTask {
     /// Create a new allowance task.
-    pub fn new(signer: Arc<dyn EvmSigner>, rpc_url: url::Url) -> Self {
-        Self { signer, rpc_url }
+    pub fn new(
+        signer: Arc<dyn EvmSigner>,
+        rpc_url: url::Url,
+        permit2: Option<Permit2Config>,
+    ) -> Self {
+        Self {
+            signer,
+            rpc_url,
+            permit2,
+        }
     }
 }
 
@@ -214,17 +223,40 @@ impl ExecutionTask for EvmAllowanceTask {
                 .parse()
                 .map_err(|_| LiFiError::Validation("Invalid from_address.".to_owned()))?;
 
-            let spender: Address = ctx
-                .step
-                .estimate
-                .as_ref()
-                .and_then(|e| e.approval_address.as_deref())
-                .ok_or_else(|| LiFiError::Transaction {
-                    code: LiFiErrorCode::InternalError,
-                    message: "Missing approval_address.".to_owned(),
-                })?
-                .parse()
-                .map_err(|_| LiFiError::Validation("Invalid approval_address.".to_owned()))?;
+            let is_permit2 = self.permit2.is_some()
+                && !is_native_token(&ctx.step.action.from_token.address)
+                && !ctx
+                    .step
+                    .estimate
+                    .as_ref()
+                    .and_then(|e| e.skip_approval)
+                    .unwrap_or(false)
+                && !ctx
+                    .step
+                    .estimate
+                    .as_ref()
+                    .and_then(|e| e.skip_permit)
+                    .unwrap_or(false);
+
+            let spender: Address = if is_permit2 {
+                self.permit2
+                    .ok_or_else(|| LiFiError::Transaction {
+                        code: LiFiErrorCode::InternalError,
+                        message: "Permit2 config required but not provided.".to_owned(),
+                    })?
+                    .permit2
+            } else {
+                ctx.step
+                    .estimate
+                    .as_ref()
+                    .and_then(|e| e.approval_address.as_deref())
+                    .ok_or_else(|| LiFiError::Transaction {
+                        code: LiFiErrorCode::InternalError,
+                        message: "Missing approval_address.".to_owned(),
+                    })?
+                    .parse()
+                    .map_err(|_| LiFiError::Validation("Invalid approval_address.".to_owned()))?
+            };
 
             let token_addr: Address = ctx
                 .step
@@ -319,11 +351,14 @@ impl ExecutionTask for EvmAllowanceTask {
                 return Ok(TaskStatus::Paused);
             }
 
+            let approve_amount = if is_permit2 { U256::MAX } else { from_amount };
+
             let hook = ctx
                 .execution_options
                 .update_transaction_request_hook
                 .as_ref();
-            let tx_hash = send_approve(&*self.signer, token_addr, spender, U256::MAX, hook).await?;
+            let tx_hash =
+                send_approve(&*self.signer, token_addr, spender, approve_amount, hook).await?;
 
             tracing::info!(tx = %tx_hash, "allowance approved");
 

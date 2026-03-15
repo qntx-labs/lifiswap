@@ -111,16 +111,16 @@ impl ExecutionTask for WaitForTransactionStatusTask {
                 }),
             )?;
 
-            let gas_costs = status_response.receiving.as_ref().and_then(|r| {
-                let gas_amount = r.gas_amount.as_ref()?;
-                let gas_token = r.gas_token.clone()?;
+            let gas_costs = status_response.sending.as_ref().and_then(|s| {
+                let gas_amount = s.gas_amount.as_ref()?;
+                let gas_token = s.gas_token.clone()?;
                 Some(vec![crate::types::GasCost {
                     cost_type: "SEND".to_owned(),
-                    price: r.gas_price.clone(),
-                    estimate: r.gas_used.clone(),
-                    limit: None,
+                    price: s.gas_price.clone(),
+                    estimate: s.gas_used.clone(),
+                    limit: s.gas_used.clone(),
                     amount: gas_amount.clone(),
-                    amount_usd: r.gas_amount_usd.clone(),
+                    amount_usd: s.gas_amount_usd.clone(),
                     token: gas_token,
                 }])
             });

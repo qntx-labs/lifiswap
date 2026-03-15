@@ -61,7 +61,7 @@ impl LiFiClient {
             query.push(("toAddress".into(), addr.clone()));
         }
 
-        Self::push_route_option_params(&mut query, QuoteRouteFields::resolve(params, defaults));
+        push_route_option_params(&mut query, &QuoteRouteFields::resolve(params, defaults));
 
         let base = url::Url::parse(&format!("{}/quote", self.api_url()))?;
         let url = url::Url::parse_with_params(base.as_str(), &query)?;
@@ -101,9 +101,9 @@ impl LiFiClient {
             query.push(("toAddress".into(), addr.clone()));
         }
 
-        Self::push_route_option_params(
+        push_route_option_params(
             &mut query,
-            QuoteRouteFields::resolve_basic(
+            &QuoteRouteFields::resolve_basic(
                 params.order,
                 params.slippage,
                 params.fee,
@@ -140,49 +140,52 @@ impl LiFiClient {
 
         self.post("/quote/contractCalls", params).await
     }
+}
 
-    /// Push merged route option query params onto `query`.
-    fn push_route_option_params(query: &mut Vec<(String, String)>, fields: QuoteRouteFields) {
-        if let Some(o) = fields.order
-            && let Ok(v) = serde_json::to_value(o)
-            && let Some(s) = v.as_str()
-        {
-            query.push(("order".into(), s.to_owned()));
-        }
-        if let Some(s) = fields.slippage {
-            query.push(("slippage".into(), s.to_string()));
-        }
-        if let Some(f) = fields.fee {
-            query.push(("fee".into(), f.to_string()));
-        }
-        if let Some(r) = fields.referrer {
-            query.push(("referrer".into(), r));
-        }
-        if let Some(v) = fields.allow_bridges {
-            query.push(("allowBridges".into(), v.join(",")));
-        }
-        if let Some(v) = fields.deny_bridges {
-            query.push(("denyBridges".into(), v.join(",")));
-        }
-        if let Some(v) = fields.prefer_bridges {
-            query.push(("preferBridges".into(), v.join(",")));
-        }
-        if let Some(v) = fields.allow_exchanges {
-            query.push(("allowExchanges".into(), v.join(",")));
-        }
-        if let Some(v) = fields.deny_exchanges {
-            query.push(("denyExchanges".into(), v.join(",")));
-        }
-        if let Some(v) = fields.prefer_exchanges {
-            query.push(("preferExchanges".into(), v.join(",")));
-        }
+/// Push merged route option query params onto `query`.
+pub(super) fn push_route_option_params(
+    query: &mut Vec<(String, String)>,
+    fields: &QuoteRouteFields,
+) {
+    if let Some(o) = fields.order
+        && let Ok(v) = serde_json::to_value(o)
+        && let Some(s) = v.as_str()
+    {
+        query.push(("order".into(), s.to_owned()));
+    }
+    if let Some(s) = fields.slippage {
+        query.push(("slippage".into(), s.to_string()));
+    }
+    if let Some(f) = fields.fee {
+        query.push(("fee".into(), f.to_string()));
+    }
+    if let Some(ref r) = fields.referrer {
+        query.push(("referrer".into(), r.clone()));
+    }
+    if let Some(ref v) = fields.allow_bridges {
+        query.push(("allowBridges".into(), v.join(",")));
+    }
+    if let Some(ref v) = fields.deny_bridges {
+        query.push(("denyBridges".into(), v.join(",")));
+    }
+    if let Some(ref v) = fields.prefer_bridges {
+        query.push(("preferBridges".into(), v.join(",")));
+    }
+    if let Some(ref v) = fields.allow_exchanges {
+        query.push(("allowExchanges".into(), v.join(",")));
+    }
+    if let Some(ref v) = fields.deny_exchanges {
+        query.push(("denyExchanges".into(), v.join(",")));
+    }
+    if let Some(ref v) = fields.prefer_exchanges {
+        query.push(("preferExchanges".into(), v.join(",")));
     }
 }
 
 /// Resolved route option fields after merging request-level values with config defaults.
 /// Owns all data to avoid cross-lifetime borrowing issues.
 #[derive(Default)]
-struct QuoteRouteFields {
+pub(super) struct QuoteRouteFields {
     order: Option<crate::types::Order>,
     slippage: Option<f64>,
     fee: Option<f64>,
@@ -197,7 +200,7 @@ struct QuoteRouteFields {
 
 impl QuoteRouteFields {
     /// Resolve all route option fields from a [`QuoteRequest`] + config defaults.
-    fn resolve(params: &QuoteRequest, defaults: Option<&RouteOptions>) -> Self {
+    pub(super) fn resolve(params: &QuoteRequest, defaults: Option<&RouteOptions>) -> Self {
         let d = defaults.cloned().unwrap_or_default();
         Self {
             order: params.order.or(d.order),
@@ -232,7 +235,7 @@ impl QuoteRouteFields {
     }
 
     /// Resolve basic fields (order, slippage, fee, referrer) only.
-    fn resolve_basic(
+    pub(super) fn resolve_basic(
         order: Option<crate::types::Order>,
         slippage: Option<f64>,
         fee: Option<f64>,

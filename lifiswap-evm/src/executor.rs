@@ -99,6 +99,7 @@ impl EvmStepExecutor {
             tasks.push(Box::new(EvmAllowanceTask::new(
                 Arc::clone(&self.signer),
                 self.rpc_url.clone(),
+                self.permit2,
             )));
             tasks.push(Box::new(PrepareTransactionTask));
             tasks.push(Box::new(EvmSignAndExecuteTask::new(

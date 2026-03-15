@@ -1,5 +1,6 @@
 //! Relay endpoints (`POST /advanced/relay`, `GET /relayer/quote`, `GET /relayer/status`).
 
+use super::quote::{QuoteRouteFields, push_route_option_params};
 use crate::client::LiFiClient;
 use crate::error::{LiFiError, Result};
 use crate::types::{
@@ -37,33 +38,16 @@ impl LiFiClient {
             ),
         ];
 
-        let eff_slippage = params
-            .slippage
-            .or_else(|| defaults.and_then(|d| d.slippage));
-        if let Some(s) = eff_slippage {
-            query.push(("slippage".into(), s.to_string()));
-        }
-
-        let eff_referrer = params
-            .referrer
-            .as_deref()
-            .or_else(|| defaults.and_then(|d| d.referrer.as_deref()));
-        if let Some(r) = eff_referrer {
-            query.push(("referrer".into(), r.to_owned()));
-        }
-
-        let eff_fee = params.fee.or_else(|| defaults.and_then(|d| d.fee));
-        if let Some(f) = eff_fee {
-            query.push(("fee".into(), f.to_string()));
-        }
-
-        let eff_order = params.order.or_else(|| defaults.and_then(|d| d.order));
-        if let Some(o) = eff_order
-            && let Ok(v) = serde_json::to_value(o)
-            && let Some(s) = v.as_str()
-        {
-            query.push(("order".into(), s.to_owned()));
-        }
+        push_route_option_params(
+            &mut query,
+            &QuoteRouteFields::resolve_basic(
+                params.order,
+                params.slippage,
+                params.fee,
+                params.referrer.as_deref(),
+                defaults,
+            ),
+        );
 
         let base = url::Url::parse(&format!("{}/relayer/quote", self.api_url()))?;
         let url = url::Url::parse_with_params(base.as_str(), &query)?;
