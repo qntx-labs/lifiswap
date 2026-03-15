@@ -321,7 +321,7 @@ impl LiFiClient {
                 provider.as_ref(),
                 route_id.clone(),
                 execute_in_background,
-                Default::default(),
+                std::collections::HashMap::default(),
             )
             .await?;
 

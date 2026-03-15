@@ -92,7 +92,10 @@ impl ExecutionTask for EvmNativePermitTask {
     ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
         Box::pin(async move {
             let from_chain_id = ctx.step.action.from_chain_id.0;
-            let permit2_proxy = self.permit2.unwrap().permit2_proxy;
+            let permit2_proxy = self
+                .permit2
+                .expect("permit2 required for native permit task")
+                .permit2_proxy;
 
             ctx.status_manager.initialize_action(
                 ctx.step,
@@ -101,7 +104,11 @@ impl ExecutionTask for EvmNativePermitTask {
                 ExecutionActionStatus::Started,
             )?;
 
-            let hook = ctx.execution_options.get_native_permit.as_ref().unwrap();
+            let hook = ctx
+                .execution_options
+                .get_native_permit
+                .as_ref()
+                .expect("get_native_permit hook required");
 
             let permit_data = hook(lifiswap::types::NativePermitParams {
                 chain_id: ctx.step.action.from_chain_id,

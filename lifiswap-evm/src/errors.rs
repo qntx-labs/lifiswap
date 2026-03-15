@@ -10,7 +10,7 @@ use lifiswap::error::{LiFiError, LiFiErrorCode};
 /// This is called by [`EvmStepExecutor`](crate::executor::EvmStepExecutor)
 /// to wrap errors from the signer and on-chain interactions before
 /// propagating them to the execution engine.
-pub(crate) fn parse_evm_error(error: LiFiError) -> LiFiError {
+pub fn parse_evm_error(error: LiFiError) -> LiFiError {
     let msg = error.to_string();
     let lower = msg.to_ascii_lowercase();
 
@@ -69,11 +69,10 @@ pub(crate) fn parse_evm_error(error: LiFiError) -> LiFiError {
     if is_7702_upgrade_rejection(&lower) {
         return LiFiError::StepRetry {
             message: "Wallet rejected EIP-7702 upgrade; retrying without atomicity".to_owned(),
-            retry_params: [(
+            retry_params: std::iter::once((
                 "atomicityNotReady".to_owned(),
                 serde_json::Value::Bool(true),
-            )]
-            .into_iter()
+            ))
             .collect(),
         };
     }

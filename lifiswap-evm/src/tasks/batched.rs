@@ -95,12 +95,9 @@ impl ExecutionTask for EvmBatchedSignAndExecuteTask {
                     .as_deref()
                     .unwrap_or_default()
                     .parse()
-                    .map_err(|_| {
-                        LiFiError::Validation("Invalid from_address.".to_owned())
-                    })?;
+                    .map_err(|_| LiFiError::Validation("Invalid from_address.".to_owned()))?;
 
-                let is_permit2 =
-                    self.permit2.is_some() && !estimate.skip_permit.unwrap_or(false);
+                let is_permit2 = self.permit2.is_some() && !estimate.skip_permit.unwrap_or(false);
 
                 let spender: Address = if is_permit2 {
                     self.permit2.expect("permit2 checked above").permit2
@@ -115,10 +112,13 @@ impl ExecutionTask for EvmBatchedSignAndExecuteTask {
                         })?
                 };
 
-                let token_addr: Address =
-                    ctx.step.action.from_token.address.parse().map_err(|_| {
-                        LiFiError::Validation("Invalid token address.".to_owned())
-                    })?;
+                let token_addr: Address = ctx
+                    .step
+                    .action
+                    .from_token
+                    .address
+                    .parse()
+                    .map_err(|_| LiFiError::Validation("Invalid token address.".to_owned()))?;
 
                 let from_amount: U256 = ctx
                     .step
@@ -129,17 +129,17 @@ impl ExecutionTask for EvmBatchedSignAndExecuteTask {
                     .parse()
                     .unwrap_or(U256::ZERO);
 
-                let read_provider =
-                    ProviderBuilder::new().connect_http(self.rpc_url.clone());
+                let read_provider = ProviderBuilder::new().connect_http(self.rpc_url.clone());
                 let contract = IERC20::new(token_addr, &read_provider);
-                let allowance: U256 = contract
-                    .allowance(owner, spender)
-                    .call()
-                    .await
-                    .map_err(|e| LiFiError::Provider {
-                        code: LiFiErrorCode::ProviderUnavailable,
-                        message: format!("Failed to check allowance: {e}"),
-                    })?;
+                let allowance: U256 =
+                    contract
+                        .allowance(owner, spender)
+                        .call()
+                        .await
+                        .map_err(|e| LiFiError::Provider {
+                            code: LiFiErrorCode::ProviderUnavailable,
+                            message: format!("Failed to check allowance: {e}"),
+                        })?;
 
                 if allowance < from_amount {
                     let approve_amount = if is_permit2 { U256::MAX } else { from_amount };
