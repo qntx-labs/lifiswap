@@ -327,7 +327,8 @@ impl LiFiClient {
             );
 
             let opts = state
-                .get(&route_id).map_or_else(|| default_opts.clone(), |d| d.execution_options.clone());
+                .get(&route_id)
+                .map_or_else(|| default_opts.clone(), |d| d.execution_options.clone());
 
             match executor
                 .execute_step(self, step_ref, provider.as_ref(), &opts)
