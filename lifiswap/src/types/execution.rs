@@ -144,6 +144,34 @@ pub type GetNativePermitHook = Arc<
         + Sync,
 >;
 
+/// Parameters passed to the [`HyperliquidSignHook`].
+#[derive(Debug, Clone)]
+pub struct HyperliquidSignParams {
+    /// The step's `tool` value (e.g. `"hyperliquidSpotProtocol"`).
+    pub tool: String,
+    /// Owner wallet address.
+    pub owner_address: String,
+    /// Typed data entries to sign (contains `ApproveAgent` and `Agent` messages).
+    pub typed_data: Vec<super::TypedData>,
+}
+
+/// Hook invoked to handle Hyperliquid agent wallet signing.
+///
+/// Hyperliquid requires a temporary agent wallet for order signing.
+/// The hook is responsible for:
+/// 1. Creating/loading the agent wallet (ephemeral private key)
+/// 2. Signing `ApproveAgent` messages with the owner wallet
+/// 3. Signing `Agent` messages with the agent wallet
+///
+/// Returns the signed typed data entries.
+pub type HyperliquidSignHook = Arc<
+    dyn Fn(
+            HyperliquidSignParams,
+        ) -> Pin<Box<dyn Future<Output = Vec<super::SignedTypedData>> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// Overall execution status of a step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -415,6 +443,8 @@ pub struct ExecutionOptions {
     pub get_contract_calls: Option<GetContractCallsHook>,
     /// Hook called to obtain EIP-2612 native permit typed data.
     pub get_native_permit: Option<GetNativePermitHook>,
+    /// Hook called to handle Hyperliquid agent wallet signing.
+    pub sign_hyperliquid: Option<HyperliquidSignHook>,
     /// Whether to execute in the background (no user interaction).
     pub execute_in_background: bool,
 }
@@ -441,6 +471,10 @@ impl std::fmt::Debug for ExecutionOptions {
             .field(
                 "get_native_permit",
                 &self.get_native_permit.as_ref().map(|_| ".."),
+            )
+            .field(
+                "sign_hyperliquid",
+                &self.sign_hyperliquid.as_ref().map(|_| ".."),
             )
             .field("execute_in_background", &self.execute_in_background)
             .finish()

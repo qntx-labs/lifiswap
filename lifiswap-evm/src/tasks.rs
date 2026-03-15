@@ -757,6 +757,16 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 return Ok(TaskStatus::Paused);
             }
 
+            // Check for Hyperliquid agent step
+            let is_hyperliquid = ctx
+                .step
+                .tool
+                .as_deref()
+                .is_some_and(|t| t == "hyperliquidSpotProtocol")
+                && intent_typed_data.iter().any(|td| {
+                    td.primary_type.as_deref() == Some("HyperliquidTransaction:ApproveAgent")
+                });
+
             // Start with already-signed permit data
             let mut signed_data: Vec<serde_json::Value> = Vec::with_capacity(all_typed_data.len());
 
@@ -779,20 +789,80 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 }
             }
 
-            // Sign the remaining intent typed data
-            for td in &intent_typed_data {
-                let signature = self.signer.sign_typed_data(td).await?;
+            if is_hyperliquid {
+                // Hyperliquid agent wallet signing via hook
+                let hook = ctx
+                    .execution_options
+                    .sign_hyperliquid
+                    .as_ref()
+                    .ok_or_else(|| LiFiError::Transaction {
+                        code: LiFiErrorCode::InternalError,
+                        message: "Hyperliquid agent step requires sign_hyperliquid hook."
+                            .to_owned(),
+                    })?;
 
-                let mut entry = serde_json::to_value(td).map_err(|e| LiFiError::Transaction {
-                    code: LiFiErrorCode::InternalError,
-                    message: format!("Failed to serialize typed data: {e}"),
-                })?;
+                let hl_results = hook(lifiswap::types::HyperliquidSignParams {
+                    tool: ctx.step.tool.clone().unwrap_or_default(),
+                    owner_address: format!("{:#x}", self.signer.address()),
+                    typed_data: intent_typed_data.into_iter().cloned().collect(),
+                })
+                .await;
 
-                if let serde_json::Value::Object(ref mut map) = entry {
-                    map.insert("signature".to_owned(), serde_json::Value::String(signature));
+                for signed in &hl_results {
+                    if let Some(ref td) = signed.typed_data {
+                        let mut entry =
+                            serde_json::to_value(td).map_err(|e| LiFiError::Transaction {
+                                code: LiFiErrorCode::InternalError,
+                                message: format!("Failed to serialize typed data: {e}"),
+                            })?;
+                        if let (serde_json::Value::Object(map), Some(sig)) =
+                            (&mut entry, &signed.signature)
+                        {
+                            map.insert(
+                                "signature".to_owned(),
+                                serde_json::Value::String(sig.clone()),
+                            );
+                        }
+                        signed_data.push(entry);
+                    }
+                }
+            } else {
+                // Standard relay signing with chain switch support
+                let from_chain_id = ctx.step.action.from_chain_id.0;
+                for td in &intent_typed_data {
+                    let target_chain_id = td
+                        .domain
+                        .as_ref()
+                        .and_then(get_domain_chain_id)
+                        .unwrap_or(from_chain_id);
+                    if target_chain_id != from_chain_id {
+                        self.signer.switch_chain(target_chain_id).await?;
+                    }
+
+                    let signature = self.signer.sign_typed_data(td).await?;
+
+                    let mut entry =
+                        serde_json::to_value(td).map_err(|e| LiFiError::Transaction {
+                            code: LiFiErrorCode::InternalError,
+                            message: format!("Failed to serialize typed data: {e}"),
+                        })?;
+
+                    if let serde_json::Value::Object(ref mut map) = entry {
+                        map.insert("signature".to_owned(), serde_json::Value::String(signature));
+                    }
+
+                    signed_data.push(entry);
                 }
 
-                signed_data.push(entry);
+                // Switch back if needed
+                if intent_typed_data.iter().any(|td| {
+                    td.domain
+                        .as_ref()
+                        .and_then(get_domain_chain_id)
+                        .is_some_and(|id| id != from_chain_id)
+                }) {
+                    self.signer.switch_chain(from_chain_id).await?;
+                }
             }
 
             ctx.status_manager.update_action(

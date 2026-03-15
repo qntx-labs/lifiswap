@@ -173,6 +173,7 @@ mod tests {
         update_transaction_request_hook: None,
         get_contract_calls: None,
         get_native_permit: None,
+        sign_hyperliquid: None,
         execute_in_background: false,
     };
 
