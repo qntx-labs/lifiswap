@@ -3763,6 +3763,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "lifiswap",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",

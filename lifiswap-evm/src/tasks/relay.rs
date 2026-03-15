@@ -12,6 +12,23 @@ use lifiswap::types::{
 use super::{get_domain_chain_id, now_ms};
 use crate::signer::EvmSigner;
 
+fn serialize_typed_data_entry<T: serde::Serialize>(
+    typed_data: &T,
+    signature: Option<&str>,
+) -> Result<serde_json::Value> {
+    let mut entry = serde_json::to_value(typed_data).map_err(|e| LiFiError::Transaction {
+        code: LiFiErrorCode::InternalError,
+        message: format!("Failed to serialize typed data: {e}"),
+    })?;
+    if let (serde_json::Value::Object(map), Some(sig)) = (&mut entry, signature) {
+        map.insert(
+            "signature".to_owned(),
+            serde_json::Value::String(sig.to_owned()),
+        );
+    }
+    Ok(entry)
+}
+
 /// Sign EIP-712 typed data and relay via the LI.FI relayer (gasless).
 ///
 /// Flow:
@@ -121,20 +138,7 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
 
             for signed in &ctx.signed_typed_data {
                 if let Some(ref td) = signed.typed_data {
-                    let mut entry =
-                        serde_json::to_value(td).map_err(|e| LiFiError::Transaction {
-                            code: LiFiErrorCode::InternalError,
-                            message: format!("Failed to serialize typed data: {e}"),
-                        })?;
-                    if let (serde_json::Value::Object(map), Some(sig)) =
-                        (&mut entry, &signed.signature)
-                    {
-                        map.insert(
-                            "signature".to_owned(),
-                            serde_json::Value::String(sig.clone()),
-                        );
-                    }
-                    signed_data.push(entry);
+                    signed_data.push(serialize_typed_data_entry(td, signed.signature.as_deref())?);
                 }
             }
 
@@ -159,20 +163,8 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
 
                 for signed in &hl_results {
                     if let Some(ref td) = signed.typed_data {
-                        let mut entry =
-                            serde_json::to_value(td).map_err(|e| LiFiError::Transaction {
-                                code: LiFiErrorCode::InternalError,
-                                message: format!("Failed to serialize typed data: {e}"),
-                            })?;
-                        if let (serde_json::Value::Object(map), Some(sig)) =
-                            (&mut entry, &signed.signature)
-                        {
-                            map.insert(
-                                "signature".to_owned(),
-                                serde_json::Value::String(sig.clone()),
-                            );
-                        }
-                        signed_data.push(entry);
+                        signed_data
+                            .push(serialize_typed_data_entry(td, signed.signature.as_deref())?);
                     }
                 }
             } else {
@@ -189,18 +181,7 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                     }
 
                     let signature = self.signer.sign_typed_data(td).await?;
-
-                    let mut entry =
-                        serde_json::to_value(td).map_err(|e| LiFiError::Transaction {
-                            code: LiFiErrorCode::InternalError,
-                            message: format!("Failed to serialize typed data: {e}"),
-                        })?;
-
-                    if let serde_json::Value::Object(ref mut map) = entry {
-                        map.insert("signature".to_owned(), serde_json::Value::String(signature));
-                    }
-
-                    signed_data.push(entry);
+                    signed_data.push(serialize_typed_data_entry(td, Some(&signature))?);
                 }
 
                 // Switch back if needed

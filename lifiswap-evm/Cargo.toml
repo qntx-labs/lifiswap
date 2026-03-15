@@ -9,6 +9,7 @@ description = "LiFi SDK - EVM chain provider (alloy-based)"
 [dependencies]
 lifiswap = { workspace = true }
 alloy = { workspace = true }
+serde = { workspace = true }
 serde_json = "1"
 tokio = { workspace = true }
 tracing = { workspace = true }

@@ -137,15 +137,13 @@ impl Provider for SvmProvider {
 
             let sol_balance = self
                 .rpc_pool
-                .call_with_retry(move |rpc| {
-                    async move {
-                        rpc.get_balance(&owner)
-                            .await
-                            .map_err(|e| LiFiError::Provider {
-                                code: LiFiErrorCode::ProviderUnavailable,
-                                message: format!("Failed to fetch SOL balance: {e}"),
-                            })
-                    }
+                .call_with_retry(move |rpc| async move {
+                    rpc.get_balance(&owner)
+                        .await
+                        .map_err(|e| LiFiError::Provider {
+                            code: LiFiErrorCode::ProviderUnavailable,
+                            message: format!("Failed to fetch SOL balance: {e}"),
+                        })
                 })
                 .await?;
 
@@ -235,15 +233,13 @@ async fn get_spl_token_balance(
     for program in &[TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID] {
         let ata = derive_ata(owner, mint, program);
         let account = rpc_pool
-            .call_with_retry(move |rpc| {
-                async move {
-                    rpc.get_account(&ata)
-                        .await
-                        .map_err(|e| LiFiError::Provider {
-                            code: LiFiErrorCode::ProviderUnavailable,
-                            message: format!("Failed to fetch token account: {e}"),
-                        })
-                }
+            .call_with_retry(move |rpc| async move {
+                rpc.get_account(&ata)
+                    .await
+                    .map_err(|e| LiFiError::Provider {
+                        code: LiFiErrorCode::ProviderUnavailable,
+                        message: format!("Failed to fetch token account: {e}"),
+                    })
             })
             .await
             .ok()?;
