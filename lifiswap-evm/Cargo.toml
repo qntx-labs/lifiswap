@@ -14,5 +14,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 
+[dev-dependencies]
+anyhow = "1"
+tracing-subscriber = "0.3"
+
 [lints]
 workspace = true

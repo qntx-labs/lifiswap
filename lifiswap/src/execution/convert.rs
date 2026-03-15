@@ -80,13 +80,7 @@ pub fn convert_quote_to_route(
         to_amount_usd.clone_from(&prev_est.to_amount_usd);
     }
 
-    let from_amount_usd = estimate
-        .from_amount_usd
-        .as_ref()
-        .ok_or_else(|| {
-            LiFiError::Validation("Missing 'from_amount_usd' in step estimate.".to_owned())
-        })?
-        .clone();
+    let from_amount_usd = estimate.from_amount_usd.clone();
 
     let gas_cost_usd = estimate
         .gas_costs
@@ -103,7 +97,7 @@ pub fn convert_quote_to_route(
             to_token: quote.action.to_token.clone(),
             from_amount: quote.action.from_amount.clone().unwrap_or_default(),
             to_amount,
-            from_amount_usd: Some(from_amount_usd),
+            from_amount_usd,
             to_amount_usd,
             to_amount_min,
             from_address: quote.action.from_address.clone(),
@@ -220,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn errors_without_from_amount_usd() {
+    fn accepts_missing_from_amount_usd() {
         let mut quote = test_quote();
         quote
             .estimate
@@ -228,7 +222,7 @@ mod tests {
             .expect("has estimate")
             .from_amount_usd = None;
 
-        let err = convert_quote_to_route(&quote, None).unwrap_err();
-        assert!(err.to_string().contains("from_amount_usd"), "{err}");
+        let route = convert_quote_to_route(&quote, None).expect("should convert");
+        assert!(route.from_amount_usd.is_none());
     }
 }
