@@ -75,6 +75,9 @@ pub struct Estimate {
     /// Approval address for token allowance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_address: Option<String>,
+    /// Whether the token requires an allowance reset before approval (e.g. USDT).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_reset: Option<bool>,
     /// Estimated execution duration in seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_duration: Option<f64>,

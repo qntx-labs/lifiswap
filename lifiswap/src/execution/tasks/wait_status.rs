@@ -111,6 +111,20 @@ impl ExecutionTask for WaitForTransactionStatusTask {
                 }),
             )?;
 
+            let gas_costs = status_response.receiving.as_ref().and_then(|r| {
+                let gas_amount = r.gas_amount.as_ref()?;
+                let gas_token = r.gas_token.clone()?;
+                Some(vec![crate::types::GasCost {
+                    cost_type: "SEND".to_owned(),
+                    price: r.gas_price.clone(),
+                    estimate: r.gas_used.clone(),
+                    limit: None,
+                    amount: gas_amount.clone(),
+                    amount_usd: r.gas_amount_usd.clone(),
+                    token: gas_token,
+                }])
+            });
+
             ctx.status_manager.update_execution(
                 ctx.step,
                 ExecutionUpdate {
@@ -123,6 +137,13 @@ impl ExecutionTask for WaitForTransactionStatusTask {
                         .receiving
                         .as_ref()
                         .and_then(|r| r.amount.clone()),
+                    to_token: status_response
+                        .receiving
+                        .as_ref()
+                        .and_then(|r| r.token.clone()),
+                    gas_costs,
+                    internal_tx_link: status_response.lifi_explorer_link.clone(),
+                    external_tx_link: status_response.bridge_explorer_link,
                     ..Default::default()
                 },
             );

@@ -2,17 +2,17 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
-use alloy::network::EthereumWallet;
 use alloy::primitives::Address;
 use alloy::providers::{Provider as AlloyProvider, ProviderBuilder};
-use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{ChainType, StepExecutorOptions, Token, TokenAmount};
 
 use crate::executor::EvmStepExecutor;
+use crate::signer::EvmSigner;
 
 sol! {
     #[sol(rpc)]
@@ -25,25 +25,40 @@ sol! {
 ///
 /// Handles address validation, balance queries, and creates
 /// [`EvmStepExecutor`] instances for step execution.
-#[derive(Debug, Clone)]
+///
+/// The signing backend is abstracted via [`EvmSigner`], allowing
+/// different backends (local private key, hardware wallet, etc.).
+#[derive(Clone)]
 pub struct EvmProvider {
-    signer: PrivateKeySigner,
-    rpc_url: String,
+    signer: Arc<dyn EvmSigner>,
+    rpc_url: url::Url,
+}
+
+impl std::fmt::Debug for EvmProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EvmProvider")
+            .field("address", &self.signer.address())
+            .field("rpc_url", &self.rpc_url.as_str())
+            .finish()
+    }
 }
 
 impl EvmProvider {
     /// Create a new EVM provider with the given signer and RPC URL.
+    ///
+    /// The `rpc_url` is used for read-only operations (balance queries, allowance checks).
+    /// The signer handles transaction signing and broadcasting independently.
     #[must_use]
-    pub fn new(signer: PrivateKeySigner, rpc_url: impl Into<String>) -> Self {
+    pub fn new(signer: impl EvmSigner, rpc_url: url::Url) -> Self {
         Self {
-            signer,
-            rpc_url: rpc_url.into(),
+            signer: Arc::new(signer),
+            rpc_url,
         }
     }
 
     /// Returns the wallet address derived from the signer.
     #[must_use]
-    pub const fn address(&self) -> Address {
+    pub fn address(&self) -> Address {
         self.signer.address()
     }
 }
@@ -62,10 +77,8 @@ impl Provider for EvmProvider {
         _name: &'a str,
         _chain_id: Option<u64>,
     ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
-        Box::pin(async {
-            // ENS resolution could be added here in the future
-            Ok(None)
-        })
+        // TODO: implement ENS resolution via alloy ENS contract calls
+        Box::pin(async { Ok(None) })
     }
 
     fn get_balance<'a>(
@@ -78,11 +91,7 @@ impl Provider for EvmProvider {
                 LiFiError::Validation(format!("Invalid EVM address: {wallet_address}"))
             })?;
 
-            let rpc_url: url::Url = self
-                .rpc_url
-                .parse()
-                .map_err(|e| LiFiError::Config(format!("Invalid RPC URL: {e}")))?;
-            let provider = ProviderBuilder::new().connect_http(rpc_url);
+            let provider = ProviderBuilder::new().connect_http(self.rpc_url.clone());
 
             let native_balance =
                 provider
@@ -138,10 +147,11 @@ impl Provider for EvmProvider {
         options: StepExecutorOptions,
     ) -> Pin<Box<dyn Future<Output = Result<Box<dyn StepExecutor>>> + Send + 'a>> {
         Box::pin(async move {
-            let wallet = EthereumWallet::from(self.signer.clone());
-
-            let executor: Box<dyn StepExecutor> =
-                Box::new(EvmStepExecutor::new(wallet, self.rpc_url.clone(), options));
+            let executor: Box<dyn StepExecutor> = Box::new(EvmStepExecutor::new(
+                Arc::clone(&self.signer),
+                self.rpc_url.clone(),
+                options,
+            ));
             Ok(executor)
         })
     }

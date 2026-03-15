@@ -138,6 +138,7 @@ mod tests {
                 to_amount: Some("1000000".to_owned()),
                 to_amount_min: Some(to_amount_min.to_owned()),
                 approval_address: None,
+                approval_reset: None,
                 fee_costs: None,
                 gas_costs: None,
                 execution_duration: None,

@@ -2,8 +2,8 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
-use alloy::network::EthereumWallet;
 use lifiswap::LiFiClient;
 use lifiswap::error::Result;
 use lifiswap::execution::status::StatusManager;
@@ -14,6 +14,7 @@ use lifiswap::execution::tasks::{
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{InteractionSettings, LiFiStepExtended, StepExecutorOptions};
 
+use crate::signer::EvmSigner;
 use crate::tasks::{EvmAllowanceTask, EvmSignAndExecuteTask};
 
 /// EVM-specific step executor.
@@ -21,13 +22,13 @@ use crate::tasks::{EvmAllowanceTask, EvmSignAndExecuteTask};
 /// Builds a [`TaskPipeline`] with the following sequence:
 ///
 /// 1. `CheckBalanceTask` — verify wallet has sufficient funds
-/// 2. `EvmAllowanceTask` — check allowance and approve if needed
+/// 2. `EvmAllowanceTask` — check/reset/set allowance as needed
 /// 3. `PrepareTransactionTask` — fetch transaction data from API
 /// 4. `EvmSignAndExecuteTask` — sign and broadcast the transaction
 /// 5. `WaitForTransactionStatusTask` — poll status until terminal
 pub struct EvmStepExecutor {
-    wallet: EthereumWallet,
-    rpc_url: String,
+    signer: Arc<dyn EvmSigner>,
+    rpc_url: url::Url,
     options: StepExecutorOptions,
     interaction: InteractionSettings,
 }
@@ -35,7 +36,8 @@ pub struct EvmStepExecutor {
 impl std::fmt::Debug for EvmStepExecutor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EvmStepExecutor")
-            .field("rpc_url", &self.rpc_url)
+            .field("address", &self.signer.address())
+            .field("rpc_url", &self.rpc_url.as_str())
             .field("options", &self.options)
             .field("interaction", &self.interaction)
             .finish_non_exhaustive()
@@ -45,12 +47,12 @@ impl std::fmt::Debug for EvmStepExecutor {
 impl EvmStepExecutor {
     /// Create a new EVM step executor.
     pub(crate) fn new(
-        wallet: EthereumWallet,
-        rpc_url: String,
+        signer: Arc<dyn EvmSigner>,
+        rpc_url: url::Url,
         options: StepExecutorOptions,
     ) -> Self {
         Self {
-            wallet,
+            signer,
             rpc_url,
             options,
             interaction: InteractionSettings::default(),
@@ -61,12 +63,12 @@ impl EvmStepExecutor {
         let mut tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = vec![
             Box::new(CheckBalanceTask),
             Box::new(EvmAllowanceTask::new(
-                self.wallet.clone(),
+                Arc::clone(&self.signer),
                 self.rpc_url.clone(),
             )),
             Box::new(PrepareTransactionTask),
             Box::new(EvmSignAndExecuteTask::new(
-                self.wallet.clone(),
+                Arc::clone(&self.signer),
                 self.rpc_url.clone(),
             )),
         ];

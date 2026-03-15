@@ -8,11 +8,13 @@
 //! ```ignore
 //! use lifiswap::{LiFiClient, LiFiConfig};
 //! use lifiswap::execution::execute_route;
-//! use lifiswap_evm::EvmProvider;
+//! use lifiswap_evm::{EvmProvider, LocalSigner};
 //! use alloy::signers::local::PrivateKeySigner;
 //!
-//! let signer: PrivateKeySigner = "0xac0974...".parse().unwrap();
-//! let provider = EvmProvider::new(signer, "https://eth.llamarpc.com");
+//! let key: PrivateKeySigner = "0xac0974...".parse().unwrap();
+//! let rpc_url: url::Url = "https://eth.llamarpc.com".parse().unwrap();
+//! let signer = LocalSigner::new(key, rpc_url.clone());
+//! let provider = EvmProvider::new(signer, rpc_url);
 //!
 //! let client = LiFiClient::new(LiFiConfig::builder().integrator("my-app").build())?;
 //! let route = client.get_routes(&req).await?.routes.remove(0);
@@ -21,6 +23,8 @@
 
 mod executor;
 mod provider;
+pub mod signer;
 mod tasks;
 
 pub use provider::EvmProvider;
+pub use signer::{EvmSigner, LocalSigner};

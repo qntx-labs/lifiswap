@@ -2,16 +2,20 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
-use alloy::network::{EthereumWallet, TransactionBuilder};
-use alloy::primitives::{Address, U256};
+use alloy::network::TransactionBuilder;
+use alloy::primitives::{Address, Bytes, U256};
 use alloy::providers::{Provider as _, ProviderBuilder};
-use alloy::rpc::types::TransactionRequest;
+use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 use alloy::sol;
+use alloy::sol_types::SolCall as _;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::execution::status::ActionUpdateParams;
 use lifiswap::execution::task::{ExecutionContext, ExecutionTask};
 use lifiswap::types::{ExecutionActionStatus, ExecutionActionType, TaskStatus};
+
+use crate::signer::EvmSigner;
 
 sol! {
     #[sol(rpc)]
@@ -21,30 +25,93 @@ sol! {
     }
 }
 
-/// Check and set ERC-20 token allowance for the approval address.
+fn is_native_token(address: &str) -> bool {
+    address == "0x0000000000000000000000000000000000000000"
+        || address.to_lowercase() == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
+/// Poll for a transaction receipt with retries.
+async fn wait_for_receipt(
+    rpc_url: &url::Url,
+    tx_hash: alloy::primitives::B256,
+) -> Result<TransactionReceipt> {
+    let provider = ProviderBuilder::new().connect_http(rpc_url.clone());
+    for _ in 0..120 {
+        match provider.get_transaction_receipt(tx_hash).await {
+            Ok(Some(receipt)) => return Ok(receipt),
+            Ok(None) => tokio::time::sleep(std::time::Duration::from_secs(2)).await,
+            Err(e) => {
+                return Err(LiFiError::Transaction {
+                    code: LiFiErrorCode::TransactionFailed,
+                    message: format!("Failed to fetch receipt: {e}"),
+                });
+            }
+        }
+    }
+    Err(LiFiError::Transaction {
+        code: LiFiErrorCode::Timeout,
+        message: format!("Timed out waiting for receipt: {tx_hash}"),
+    })
+}
+
+/// Send an ERC-20 `approve` transaction via the signer and wait for confirmation.
+async fn send_approve(
+    signer: &dyn EvmSigner,
+    rpc_url: &url::Url,
+    token_addr: Address,
+    spender: Address,
+    amount: U256,
+) -> Result<alloy::primitives::B256> {
+    let calldata = IERC20::approveCall { spender, amount }.abi_encode();
+    let mut tx = TransactionRequest::default();
+    tx.set_to(token_addr);
+    tx.set_input(Bytes::from(calldata));
+
+    let tx_hash = signer.send_transaction(tx).await?;
+
+    let receipt = wait_for_receipt(rpc_url, tx_hash).await?;
+    if !receipt.status() {
+        return Err(LiFiError::Transaction {
+            code: LiFiErrorCode::TransactionFailed,
+            message: format!("Approve transaction reverted: {tx_hash:#x}"),
+        });
+    }
+
+    Ok(tx_hash)
+}
+
+/// Check, reset, and set ERC-20 token allowance for the approval address.
 ///
-/// Checks the current allowance on-chain. If sufficient, skips approval.
-/// If insufficient, sends an `approve(MAX)` transaction.
+/// Flow:
+/// 1. Check current allowance on-chain
+/// 2. If sufficient, skip
+/// 3. If `approval_reset` and existing non-zero allowance, reset to 0 first (for USDT etc.)
+/// 4. Approve `U256::MAX`
 ///
 /// Skips entirely if the token is native (ETH) or no approval address is set.
-#[derive(Debug, Clone)]
 pub struct EvmAllowanceTask {
-    wallet: EthereumWallet,
-    rpc_url: String,
+    signer: Arc<dyn EvmSigner>,
+    rpc_url: url::Url,
+}
+
+impl std::fmt::Debug for EvmAllowanceTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EvmAllowanceTask")
+            .field("address", &self.signer.address())
+            .finish_non_exhaustive()
+    }
 }
 
 impl EvmAllowanceTask {
     /// Create a new allowance task.
-    pub fn new(wallet: EthereumWallet, rpc_url: impl Into<String>) -> Self {
-        Self {
-            wallet,
-            rpc_url: rpc_url.into(),
-        }
-    }
-
-    fn is_native_token(address: &str) -> bool {
-        address == "0x0000000000000000000000000000000000000000"
-            || address.to_lowercase() == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    pub fn new(signer: Arc<dyn EvmSigner>, rpc_url: url::Url) -> Self {
+        Self { signer, rpc_url }
     }
 }
 
@@ -61,7 +128,7 @@ impl ExecutionTask for EvmAllowanceTask {
                 .as_ref()
                 .and_then(|e| e.approval_address.as_ref())
                 .is_some();
-            !Self::is_native_token(token_addr) && has_approval
+            !is_native_token(token_addr) && has_approval
         })
     }
 
@@ -72,7 +139,6 @@ impl ExecutionTask for EvmAllowanceTask {
         Box::pin(async move {
             let from_chain_id = ctx.step.action.from_chain_id.0;
 
-            // Phase 1: Check current allowance
             ctx.status_manager.initialize_action(
                 ctx.step,
                 ExecutionActionType::CheckAllowance,
@@ -121,12 +187,7 @@ impl ExecutionTask for EvmAllowanceTask {
                 .parse()
                 .unwrap_or(U256::ZERO);
 
-            let rpc_url: url::Url = self
-                .rpc_url
-                .parse()
-                .map_err(|e| LiFiError::Config(format!("Invalid RPC URL: {e}")))?;
-            let read_provider = ProviderBuilder::new().connect_http(rpc_url.clone());
-
+            let read_provider = ProviderBuilder::new().connect_http(self.rpc_url.clone());
             let contract = IERC20::new(token_addr, &read_provider);
             let allowance: U256 = contract
                 .allowance(owner, spender)
@@ -145,13 +206,54 @@ impl ExecutionTask for EvmAllowanceTask {
             )?;
 
             if allowance >= from_amount {
-                tracing::debug!(allowance = %allowance, required = %from_amount, "allowance sufficient, skipping approval");
+                tracing::debug!(allowance = %allowance, required = %from_amount, "allowance sufficient");
                 return Ok(TaskStatus::Completed);
             }
 
-            tracing::debug!(allowance = %allowance, required = %from_amount, "allowance insufficient, approving");
+            tracing::debug!(allowance = %allowance, required = %from_amount, "allowance insufficient");
 
-            // Phase 2: Approve if insufficient
+            let needs_reset = allowance > U256::ZERO
+                && ctx
+                    .step
+                    .estimate
+                    .as_ref()
+                    .and_then(|e| e.approval_reset)
+                    .unwrap_or(false);
+
+            if needs_reset {
+                ctx.status_manager.initialize_action(
+                    ctx.step,
+                    ExecutionActionType::ResetAllowance,
+                    from_chain_id,
+                    ExecutionActionStatus::ActionRequired,
+                )?;
+
+                if !ctx.allow_user_interaction {
+                    return Ok(TaskStatus::Paused);
+                }
+
+                let tx_hash = send_approve(
+                    &*self.signer,
+                    &self.rpc_url,
+                    token_addr,
+                    spender,
+                    U256::ZERO,
+                )
+                .await?;
+
+                tracing::info!(tx = %tx_hash, "allowance reset to zero");
+
+                ctx.status_manager.update_action(
+                    ctx.step,
+                    ExecutionActionType::ResetAllowance,
+                    ExecutionActionStatus::Done,
+                    Some(ActionUpdateParams {
+                        tx_hash: Some(format!("{tx_hash:#x}")),
+                        ..Default::default()
+                    }),
+                )?;
+            }
+
             ctx.status_manager.initialize_action(
                 ctx.step,
                 ExecutionActionType::SetAllowance,
@@ -163,25 +265,8 @@ impl ExecutionTask for EvmAllowanceTask {
                 return Ok(TaskStatus::Paused);
             }
 
-            let write_provider = ProviderBuilder::new()
-                .wallet(self.wallet.clone())
-                .connect_http(rpc_url);
-
-            let contract = IERC20::new(token_addr, &write_provider);
-            let tx_hash = contract
-                .approve(spender, U256::MAX)
-                .send()
-                .await
-                .map_err(|e| LiFiError::Transaction {
-                    code: LiFiErrorCode::TransactionFailed,
-                    message: format!("Approval transaction failed: {e}"),
-                })?
-                .watch()
-                .await
-                .map_err(|e| LiFiError::Transaction {
-                    code: LiFiErrorCode::TransactionFailed,
-                    message: format!("Approval confirmation failed: {e}"),
-                })?;
+            let tx_hash =
+                send_approve(&*self.signer, &self.rpc_url, token_addr, spender, U256::MAX).await?;
 
             tracing::info!(tx = %tx_hash, "allowance approved");
 
@@ -201,19 +286,23 @@ impl ExecutionTask for EvmAllowanceTask {
 }
 
 /// Sign and broadcast the main swap/bridge transaction.
-#[derive(Debug, Clone)]
 pub struct EvmSignAndExecuteTask {
-    wallet: EthereumWallet,
-    rpc_url: String,
+    signer: Arc<dyn EvmSigner>,
+    rpc_url: url::Url,
+}
+
+impl std::fmt::Debug for EvmSignAndExecuteTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EvmSignAndExecuteTask")
+            .field("address", &self.signer.address())
+            .finish_non_exhaustive()
+    }
 }
 
 impl EvmSignAndExecuteTask {
     /// Create a new sign-and-execute task.
-    pub fn new(wallet: EthereumWallet, rpc_url: impl Into<String>) -> Self {
-        Self {
-            wallet,
-            rpc_url: rpc_url.into(),
-        }
+    pub fn new(signer: Arc<dyn EvmSigner>, rpc_url: url::Url) -> Self {
+        Self { signer, rpc_url }
     }
 }
 
@@ -240,15 +329,13 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 .parse()
                 .map_err(|_| LiFiError::Validation("Invalid 'to' address.".to_owned()))?;
 
-            let data = tx_request
+            let call_data: Bytes = tx_request
                 .data
                 .as_deref()
                 .ok_or_else(|| LiFiError::Transaction {
                     code: LiFiErrorCode::InternalError,
                     message: "Transaction request missing 'data'.".to_owned(),
-                })?;
-
-            let call_data: alloy::primitives::Bytes = data
+                })?
                 .parse()
                 .map_err(|_| LiFiError::Validation("Invalid transaction data hex.".to_owned()))?;
 
@@ -273,30 +360,13 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 tx.set_chain_id(chain_id);
             }
 
-            let rpc_url: url::Url = self
-                .rpc_url
-                .parse()
-                .map_err(|e| LiFiError::Config(format!("Invalid RPC URL: {e}")))?;
-            let provider = ProviderBuilder::new()
-                .wallet(self.wallet.clone())
-                .connect_http(rpc_url);
-
             let action_type = if ctx.is_bridge_execution {
                 ExecutionActionType::CrossChain
             } else {
                 ExecutionActionType::Swap
             };
 
-            let pending =
-                provider
-                    .send_transaction(tx)
-                    .await
-                    .map_err(|e| LiFiError::Transaction {
-                        code: LiFiErrorCode::TransactionFailed,
-                        message: format!("Send transaction failed: {e}"),
-                    })?;
-
-            let tx_hash = *pending.tx_hash();
+            let tx_hash = self.signer.send_transaction(tx).await?;
             tracing::info!(tx = %tx_hash, "transaction sent");
 
             ctx.status_manager.update_action(
@@ -305,22 +375,12 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 ExecutionActionStatus::Pending,
                 Some(ActionUpdateParams {
                     tx_hash: Some(format!("{tx_hash:#x}")),
-                    signed_at: Some(
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
-                    ),
+                    signed_at: Some(now_ms()),
                     ..Default::default()
                 }),
             )?;
 
-            let receipt = pending
-                .get_receipt()
-                .await
-                .map_err(|e| LiFiError::Transaction {
-                    code: LiFiErrorCode::TransactionFailed,
-                    message: format!("Transaction receipt failed: {e}"),
-                })?;
+            let receipt = wait_for_receipt(&self.rpc_url, tx_hash).await?;
 
             if !receipt.status() {
                 return Err(LiFiError::Transaction {
