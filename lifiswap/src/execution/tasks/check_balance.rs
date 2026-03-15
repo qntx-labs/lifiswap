@@ -48,7 +48,6 @@ impl ExecutionTask for CheckBalanceTask {
 
             let wallet_address = ctx
                 .step
-                .step
                 .action
                 .from_address
                 .as_ref()
@@ -58,7 +57,7 @@ impl ExecutionTask for CheckBalanceTask {
                 })?
                 .clone();
 
-            check_balance(ctx, &wallet_address, 0).await?;
+            check_balance(ctx, &wallet_address).await?;
 
             tracing::debug!(wallet = %wallet_address, "balance check passed");
 
@@ -67,30 +66,10 @@ impl ExecutionTask for CheckBalanceTask {
     }
 }
 
-/// Recursively check balance with retry logic (mirrors TS `checkBalance` helper).
-async fn check_balance(
-    ctx: &mut ExecutionContext<'_>,
-    wallet_address: &str,
-    depth: u32,
-) -> Result<()> {
+/// Check balance with retry logic (mirrors TS `checkBalance` helper).
+async fn check_balance(ctx: &mut ExecutionContext<'_>, wallet_address: &str) -> Result<()> {
     let from_token = ctx.step.action.from_token.clone();
-    let balances = ctx
-        .provider
-        .get_balance(wallet_address, &[from_token])
-        .await?;
-
-    let Some(token_balance) = balances.first() else {
-        return Ok(());
-    };
-
-    let current_balance: u128 = token_balance
-        .amount
-        .as_deref()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-
     let needed_balance: u128 = ctx
-        .step
         .step
         .action
         .from_amount
@@ -98,19 +77,39 @@ async fn check_balance(
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
-    if current_balance >= needed_balance {
-        return Ok(());
-    }
+    let mut current_balance: u128 = 0;
+    let mut last_token_balance = None;
 
-    if depth < BALANCE_RETRY_COUNT {
-        tokio::time::sleep(std::time::Duration::from_millis(BALANCE_RETRY_DELAY_MS)).await;
-        return Box::pin(check_balance(ctx, wallet_address, depth + 1)).await;
+    for attempt in 0..=BALANCE_RETRY_COUNT {
+        let balances = ctx
+            .provider
+            .get_balance(wallet_address, std::slice::from_ref(&from_token))
+            .await?;
+
+        let Some(token_balance) = balances.into_iter().next() else {
+            return Ok(());
+        };
+
+        current_balance = token_balance
+            .amount
+            .as_deref()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        if current_balance >= needed_balance {
+            return Ok(());
+        }
+
+        last_token_balance = Some(token_balance);
+
+        if attempt < BALANCE_RETRY_COUNT {
+            tokio::time::sleep(std::time::Duration::from_millis(BALANCE_RETRY_DELAY_MS)).await;
+        }
     }
 
     let slippage = ctx.step.action.slippage.unwrap_or(0.0);
-    let slippage_factor = 1.0 - slippage;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let needed_with_slippage = (needed_balance as f64 * slippage_factor) as u128;
+    let needed_with_slippage = (needed_balance as f64 * (1.0 - slippage)) as u128;
 
     if needed_with_slippage <= current_balance {
         ctx.step.action.from_amount = Some(current_balance.to_string());
@@ -121,6 +120,7 @@ async fn check_balance(
         return Ok(());
     }
 
+    let token_balance = last_token_balance.expect("loop ran at least once");
     let symbol = &token_balance.token.symbol;
     let decimals = token_balance.token.decimals;
     let needed_fmt = format_units(needed_balance, decimals);

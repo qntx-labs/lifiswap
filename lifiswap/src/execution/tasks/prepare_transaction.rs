@@ -23,7 +23,6 @@ use crate::types::{
 /// relay (gasless) execution path.
 fn is_relay_step(ctx: &ExecutionContext<'_>) -> bool {
     ctx.step
-        .step
         .typed_data
         .as_ref()
         .is_some_and(|td| !td.is_empty())
@@ -94,7 +93,7 @@ impl ExecutionTask for PrepareTransactionTask {
                 ctx.step.transaction_request = updated_step.transaction_request;
 
                 if is_relay {
-                    ctx.step.step.typed_data = updated_step.typed_data;
+                    ctx.step.typed_data = updated_step.typed_data;
                 }
             }
 
@@ -146,7 +145,7 @@ async fn get_relay_updated_step(ctx: &ExecutionContext<'_>) -> Result<crate::typ
         integrator: None,
         referrer: None,
         fee: None,
-        allow_bridges: ctx.step.step.tool.as_ref().map(|t| vec![t.clone()]),
+        allow_bridges: ctx.step.tool.as_ref().map(|t| vec![t.clone()]),
         deny_bridges: None,
         prefer_bridges: None,
         allow_exchanges: None,

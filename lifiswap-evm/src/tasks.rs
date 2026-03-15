@@ -19,6 +19,7 @@ use lifiswap::types::{
 };
 
 use crate::executor::Permit2Config;
+use crate::is_native_token;
 use crate::permit2;
 use crate::signer::EvmSigner;
 
@@ -28,11 +29,6 @@ sol! {
         function allowance(address owner, address spender) external view returns (uint256);
         function approve(address spender, uint256 amount) external returns (bool);
     }
-}
-
-fn is_native_token(address: &str) -> bool {
-    address.parse::<Address>().is_ok_and(|a| a.is_zero())
-        || address.eq_ignore_ascii_case("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE")
 }
 
 const GAS_BUFFER: u64 = 300_000;
@@ -385,12 +381,14 @@ impl ExecutionTask for EvmSignAndExecuteTask {
         ctx: &'a mut ExecutionContext<'_>,
     ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
         Box::pin(async move {
-            let api_tx = ctx.step.step.transaction_request.clone().ok_or_else(|| {
-                LiFiError::Transaction {
-                    code: LiFiErrorCode::InternalError,
-                    message: "No transaction request data available.".to_owned(),
-                }
-            })?;
+            let api_tx =
+                ctx.step
+                    .transaction_request
+                    .clone()
+                    .ok_or_else(|| LiFiError::Transaction {
+                        code: LiFiErrorCode::InternalError,
+                        message: "No transaction request data available.".to_owned(),
+                    })?;
 
             let hook = ctx
                 .execution_options
@@ -655,7 +653,6 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
         Box::pin(async move {
             let unsigned = ctx
                 .step
-                .step
                 .typed_data
                 .as_ref()
                 .ok_or_else(|| LiFiError::Transaction {
@@ -770,7 +767,7 @@ impl ExecutionTask for EvmCheckPermitsTask {
         ctx: &'a ExecutionContext<'_>,
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
-            ctx.step.step.typed_data.as_ref().is_some_and(|tds| {
+            ctx.step.typed_data.as_ref().is_some_and(|tds| {
                 tds.iter()
                     .any(|td| td.primary_type.as_deref() == Some("Permit"))
             })
@@ -792,7 +789,6 @@ impl ExecutionTask for EvmCheckPermitsTask {
             )?;
 
             let permit_entries: Vec<_> = ctx
-                .step
                 .step
                 .typed_data
                 .as_ref()

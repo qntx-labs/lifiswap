@@ -170,10 +170,7 @@ impl Provider for EvmProvider {
             let mut results = Vec::with_capacity(tokens.len());
 
             for token in tokens {
-                let is_native = token.address.parse::<Address>().is_ok_and(|a| a.is_zero())
-                    || token
-                        .address
-                        .eq_ignore_ascii_case("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
+                let is_native = crate::is_native_token(&token.address);
 
                 let amount = if is_native {
                     Some(native_balance.to_string())

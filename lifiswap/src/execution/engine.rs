@@ -287,8 +287,8 @@ impl LiFiClient {
                     .as_ref()
                     .and_then(|e| e.to_amount.clone());
                 if let Some(to_amount) = prev_to_amount {
-                    route.steps[step_idx].step.action.from_amount = Some(to_amount.clone());
-                    if let Some(ref mut included) = route.steps[step_idx].step.included_steps
+                    route.steps[step_idx].action.from_amount = Some(to_amount.clone());
+                    if let Some(ref mut included) = route.steps[step_idx].included_steps
                         && let Some(first) = included.first_mut()
                     {
                         first.action.from_amount = Some(to_amount);
@@ -296,7 +296,7 @@ impl LiFiClient {
                 }
             }
 
-            let from_chain_id = route.steps[step_idx].step.action.from_chain_id;
+            let from_chain_id = route.steps[step_idx].action.from_chain_id;
 
             let chain = chains
                 .iter()

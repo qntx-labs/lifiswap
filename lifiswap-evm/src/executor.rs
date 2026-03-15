@@ -83,11 +83,7 @@ impl EvmStepExecutor {
 
     fn build_pipeline(&self, step: &LiFiStepExtended) -> TaskPipeline {
         let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
-        let is_relay = step
-            .step
-            .typed_data
-            .as_ref()
-            .is_some_and(|td| !td.is_empty());
+        let is_relay = step.typed_data.as_ref().is_some_and(|td| !td.is_empty());
 
         let mut tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = Vec::new();
 

@@ -28,7 +28,14 @@ pub mod rpc;
 pub mod signer;
 mod tasks;
 
+use alloy::primitives::Address;
 pub use executor::Permit2Config;
 pub use provider::EvmProvider;
 pub use rpc::{RpcUrlResolver, StaticRpcUrls};
 pub use signer::{EvmSigner, LocalSigner};
+
+/// Check whether a token address represents the native token (ETH).
+pub(crate) fn is_native_token(address: &str) -> bool {
+    address.parse::<Address>().is_ok_and(|a| a.is_zero())
+        || address.eq_ignore_ascii_case("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE")
+}
