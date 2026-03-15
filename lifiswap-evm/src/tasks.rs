@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, Bytes, U256};
-use alloy::providers::ProviderBuilder;
+use alloy::providers::{Provider as _, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::sol_types::SolCall as _;
@@ -39,6 +39,23 @@ fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
+/// Estimate gas for a transaction via `eth_estimateGas`.
+///
+/// Returns `None` if the estimation fails (non-fatal — the caller falls back
+/// to the original gas limit from the API).
+async fn estimate_gas(rpc_url: &url::Url, tx: &TransactionRequest, from: Address) -> Option<u64> {
+    let provider = ProviderBuilder::new().connect_http(rpc_url.clone());
+    let mut est_tx = tx.clone();
+    est_tx.set_from(from);
+    match provider.estimate_gas(est_tx).await {
+        Ok(gas) => Some(gas),
+        Err(e) => {
+            tracing::warn!(error = %e, "gas estimation failed, using original limit");
+            None
+        }
+    }
 }
 
 /// Send an ERC-20 `approve` transaction via the signer and wait for confirmation.
@@ -553,17 +570,27 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 (to_addr, call_data)
             };
 
+            let is_permit2_wrapped = final_to != to_addr;
+
             let mut tx = TransactionRequest::default()
                 .with_to(final_to)
                 .with_input(final_data)
                 .with_value(value);
 
-            if let Some(limit) = gas_limit {
-                tx.set_gas_limit(limit);
-            }
-
             if let Some(chain_id) = api_tx.chain_id {
                 tx.set_chain_id(chain_id);
+            }
+
+            const GAS_BUFFER: u64 = 300_000;
+
+            if is_permit2_wrapped {
+                let estimated = estimate_gas(&self.rpc_url, &tx, self.signer.address()).await;
+                let original = gas_limit.unwrap_or(0);
+                let base = estimated.unwrap_or(original).max(original);
+                tx.set_gas_limit(base.saturating_add(GAS_BUFFER));
+                tracing::debug!(original, estimated = ?estimated, final_limit = base + GAS_BUFFER, "permit2 gas buffer applied");
+            } else if let Some(limit) = gas_limit {
+                tx.set_gas_limit(limit);
             }
 
             let tx_hash = self.signer.send_transaction(tx).await?;
