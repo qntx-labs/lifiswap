@@ -33,6 +33,16 @@ sol! {
 
 const GAS_BUFFER: u64 = 300_000;
 
+/// Build a block-explorer transaction link from chain metadata.
+///
+/// Returns `None` if the chain has no configured explorer URLs.
+fn get_tx_link(chain: &lifiswap::types::Chain, tx_hash: &str) -> Option<String> {
+    let urls = chain.metamask.as_ref()?.block_explorer_urls.as_ref()?;
+    let base = urls.first()?;
+    let base = base.trim_end_matches('/');
+    Some(format!("{base}/tx/{tx_hash}"))
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -362,12 +372,15 @@ impl ExecutionTask for EvmAllowanceTask {
 
             tracing::info!(tx = %tx_hash, "allowance approved");
 
+            let tx_hash_str = format!("{tx_hash:#x}");
+            let tx_link = get_tx_link(ctx.from_chain, &tx_hash_str);
             ctx.status_manager.update_action(
                 ctx.step,
                 ExecutionActionType::SetAllowance,
                 ExecutionActionStatus::Done,
                 Some(ActionUpdateParams {
-                    tx_hash: Some(format!("{tx_hash:#x}")),
+                    tx_hash: Some(tx_hash_str),
+                    tx_link,
                     ..Default::default()
                 }),
             )?;
@@ -628,12 +641,15 @@ impl ExecutionTask for EvmSignAndExecuteTask {
             let tx_hash = self.signer.send_transaction(tx).await?;
             tracing::info!(tx = %tx_hash, "transaction sent");
 
+            let tx_hash_str = format!("{tx_hash:#x}");
+            let tx_link = get_tx_link(ctx.from_chain, &tx_hash_str);
             ctx.status_manager.update_action(
                 ctx.step,
                 action_type,
                 ExecutionActionStatus::Pending,
                 Some(ActionUpdateParams {
-                    tx_hash: Some(format!("{tx_hash:#x}")),
+                    tx_hash: Some(tx_hash_str),
+                    tx_link,
                     signed_at: Some(now_ms()),
                     ..Default::default()
                 }),
