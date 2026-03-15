@@ -19,6 +19,8 @@ pub enum StepType {
     Lifi,
     /// Protocol-specific interaction.
     Protocol,
+    /// Custom contract call.
+    Custom,
 }
 
 /// Action describing what a step does.

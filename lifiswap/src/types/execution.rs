@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use super::{FeeCost, GasCost, Token, TransactionRequest};
+use super::{ChainId, ContractCall, FeeCost, GasCost, Token, TransactionRequest};
 
 /// Callback invoked whenever a route is updated during execution.
 pub type UpdateRouteHook = Arc<dyn Fn(&RouteExtended) + Send + Sync>;
@@ -59,6 +59,60 @@ pub type TransactionRequestUpdateHook = Arc<
     dyn Fn(
             TransactionRequestUpdateParams,
         ) -> Pin<Box<dyn Future<Output = TransactionRequest> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// Parameters passed to the [`GetContractCallsHook`].
+#[derive(Debug, Clone)]
+pub struct ContractCallParams {
+    /// Source chain ID.
+    pub from_chain_id: ChainId,
+    /// Destination chain ID.
+    pub to_chain_id: ChainId,
+    /// Source token address.
+    pub from_token_address: String,
+    /// Destination token address.
+    pub to_token_address: String,
+    /// Sender address.
+    pub from_address: String,
+    /// Recipient address.
+    pub to_address: Option<String>,
+    /// Input amount in base units.
+    pub from_amount: String,
+    /// Expected output amount.
+    pub to_amount: String,
+    /// Slippage tolerance.
+    pub slippage: Option<f64>,
+}
+
+/// Tool metadata for a contract call step.
+#[derive(Debug, Clone)]
+pub struct ContractTool {
+    /// Tool name.
+    pub name: String,
+    /// Tool logo URI.
+    pub logo_uri: String,
+}
+
+/// Result returned by [`GetContractCallsHook`].
+#[derive(Debug, Clone)]
+pub struct GetContractCallsResult {
+    /// Contract calls to execute at destination.
+    pub contract_calls: Vec<ContractCall>,
+    /// Whether to use the patcher API to update calldata amounts.
+    pub patcher: bool,
+    /// Optional tool metadata for the custom step.
+    pub contract_tool: Option<ContractTool>,
+}
+
+/// Hook invoked to obtain contract calls for a destination chain execution.
+///
+/// Used for contract call steps (steps containing `includedSteps` with
+/// `type = "custom"`). The hook provides the contract calls that will be
+/// submitted via `getContractCallsQuote`.
+pub type GetContractCallsHook = Arc<
+    dyn Fn(ContractCallParams) -> Pin<Box<dyn Future<Output = GetContractCallsResult> + Send>>
         + Send
         + Sync,
 >;
@@ -330,6 +384,8 @@ pub struct ExecutionOptions {
     /// Hook called before a transaction is signed, allowing modification of
     /// gas parameters, calldata, etc.
     pub update_transaction_request_hook: Option<TransactionRequestUpdateHook>,
+    /// Hook called to obtain contract calls for destination chain execution.
+    pub get_contract_calls: Option<GetContractCallsHook>,
     /// Whether to execute in the background (no user interaction).
     pub execute_in_background: bool,
 }
@@ -348,6 +404,10 @@ impl std::fmt::Debug for ExecutionOptions {
             .field(
                 "update_transaction_request_hook",
                 &self.update_transaction_request_hook.as_ref().map(|_| ".."),
+            )
+            .field(
+                "get_contract_calls",
+                &self.get_contract_calls.as_ref().map(|_| ".."),
             )
             .field("execute_in_background", &self.execute_in_background)
             .finish()

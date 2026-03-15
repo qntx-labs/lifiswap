@@ -116,18 +116,21 @@ pub struct QuoteToAmountRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct ContractCall {
+    /// Input amount in base units.
+    #[builder(into)]
+    pub from_amount: String,
+    /// Source token address.
+    #[builder(into)]
+    pub from_token_address: String,
     /// Target contract address.
     #[builder(into)]
-    pub call_to: String,
-    /// Call data.
+    pub to_contract_address: String,
+    /// Call data to execute on the target contract.
     #[builder(into)]
-    pub call_data: String,
-    /// Native token value to send.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub call_data_value: Option<String>,
+    pub to_contract_call_data: String,
     /// Gas limit for this call.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub call_gas_limit: Option<String>,
+    #[builder(into)]
+    pub to_contract_gas_limit: String,
 }
 
 /// Request parameters for contract calls quote.
@@ -157,6 +160,10 @@ pub struct ContractCallsQuoteRequest {
     pub to_amount: Option<String>,
     /// Contract calls to execute at destination.
     pub contract_calls: Vec<ContractCall>,
+    /// Fallback address for failed destination calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
+    pub to_fallback_address: Option<String>,
     /// Integrator identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub integrator: Option<String>,

@@ -171,6 +171,7 @@ mod tests {
         update_route_hook: None,
         accept_exchange_rate_update_hook: None,
         update_transaction_request_hook: None,
+        get_contract_calls: None,
         execute_in_background: false,
     };
 
