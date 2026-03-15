@@ -36,6 +36,7 @@ pub struct EvmProvider {
     rpc_url: url::Url,
     rpc_resolver: Option<Arc<dyn RpcUrlResolver>>,
     permit2: Option<Permit2Config>,
+    disable_message_signing: bool,
 }
 
 impl std::fmt::Debug for EvmProvider {
@@ -60,6 +61,7 @@ impl EvmProvider {
             rpc_url,
             rpc_resolver: None,
             permit2: None,
+            disable_message_signing: false,
         }
     }
 
@@ -84,6 +86,16 @@ impl EvmProvider {
             permit2,
             permit2_proxy,
         });
+        self
+    }
+
+    /// Disable EIP-712 message signing (Permit2, relay).
+    ///
+    /// When set, the executor will skip Permit2 gasless approval paths and
+    /// fall back to standard on-chain allowance transactions.
+    #[must_use]
+    pub const fn with_message_signing_disabled(mut self) -> Self {
+        self.disable_message_signing = true;
         self
     }
 
@@ -202,11 +214,16 @@ impl Provider for EvmProvider {
         options: StepExecutorOptions,
     ) -> Pin<Box<dyn Future<Output = Result<Box<dyn StepExecutor>>> + Send + 'a>> {
         Box::pin(async move {
+            let permit2 = if self.disable_message_signing {
+                None
+            } else {
+                self.permit2
+            };
             let executor: Box<dyn StepExecutor> = Box::new(EvmStepExecutor::new(
                 Arc::clone(&self.signer),
                 self.rpc_url.clone(),
                 options,
-                self.permit2,
+                permit2,
             ));
             Ok(executor)
         })

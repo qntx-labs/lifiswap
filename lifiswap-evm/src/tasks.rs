@@ -35,6 +35,8 @@ fn is_native_token(address: &str) -> bool {
         || address.eq_ignore_ascii_case("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE")
 }
 
+const GAS_BUFFER: u64 = 300_000;
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -165,9 +167,8 @@ impl ExecutionTask for EvmAllowanceTask {
                 return false;
             }
 
-            let estimate = match ctx.step.estimate.as_ref() {
-                Some(e) => e,
-                None => return false,
+            let Some(estimate) = ctx.step.estimate.as_ref() else {
+                return false;
             };
 
             if estimate.approval_address.is_none() {
@@ -178,7 +179,7 @@ impl ExecutionTask for EvmAllowanceTask {
                 return false;
             }
 
-            let has_pending_tx = ctx.step.execution.as_ref().map_or(false, |exec| {
+            let has_pending_tx = ctx.step.execution.as_ref().is_some_and(|exec| {
                 exec.actions.iter().any(|a| {
                     matches!(
                         a.action_type,
@@ -580,8 +581,6 @@ impl ExecutionTask for EvmSignAndExecuteTask {
             if let Some(chain_id) = api_tx.chain_id {
                 tx.set_chain_id(chain_id);
             }
-
-            const GAS_BUFFER: u64 = 300_000;
 
             if is_permit2_wrapped {
                 let estimated = estimate_gas(&self.rpc_url, &tx, self.signer.address()).await;
