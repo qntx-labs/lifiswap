@@ -1,3 +1,4 @@
+#![allow(clippy::print_stdout)]
 //! Compare multiple cross-chain routes and display fee breakdowns.
 //!
 //! Fetches all available routes for a transfer and ranks them by output amount,

@@ -1,3 +1,4 @@
+#![allow(clippy::print_stdout)]
 //! One-line cross-chain swap.
 //!
 //! The simplest possible usage: `client.swap()` handles everything —

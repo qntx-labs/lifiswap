@@ -1,3 +1,4 @@
+#![allow(clippy::print_stdout)]
 //! Query-only usage — no wallet or signer needed.
 //!
 //! Demonstrates read-only LI.FI API calls: chains, tokens, tools,
@@ -33,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
             extended: None,
         }))
         .await?;
-    let eth_tokens = tokens.tokens.get("1").map_or(0, |t| t.len());
+    let eth_tokens = tokens.tokens.get("1").map_or(0, Vec::len);
     println!("\nEthereum tokens: {eth_tokens}");
 
     // Gas recommendation for Arbitrum

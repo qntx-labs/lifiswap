@@ -1,3 +1,4 @@
+#![allow(clippy::print_stdout, clippy::collapsible_if)]
 //! Minimal cross-chain USDC swap example.
 //!
 //! Bridges USDC from Monad → Base using a local private key signer.

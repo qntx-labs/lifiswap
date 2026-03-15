@@ -48,7 +48,7 @@ impl BtcConfirmTask {
 const POLL_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 
 /// Maximum time to wait for confirmation: 30 minutes.
-const CONFIRM_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(1800);
+const CONFIRM_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_mins(30);
 
 /// Reason why a transaction was replaced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

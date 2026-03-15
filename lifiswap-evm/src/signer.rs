@@ -226,7 +226,7 @@ impl EvmSigner for LocalSigner {
         Box::pin(async move {
             let provider = ProviderBuilder::new().connect_http(self.rpc_url.clone());
             alloy::providers::PendingTransactionBuilder::new(provider.root().clone(), tx_hash)
-                .with_timeout(Some(std::time::Duration::from_secs(240)))
+                .with_timeout(Some(std::time::Duration::from_mins(4)))
                 .get_receipt()
                 .await
                 .map_err(|e| LiFiError::Transaction {

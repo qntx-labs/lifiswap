@@ -131,7 +131,7 @@ impl ExecutionTask for SvmSignTask {
                 });
             }
 
-            let timeout = tokio::time::Duration::from_secs(120);
+            let timeout = tokio::time::Duration::from_mins(2);
             let signed = tokio::time::timeout(timeout, self.signer.sign_transactions(transactions))
                 .await
                 .map_err(|_| LiFiError::Transaction {

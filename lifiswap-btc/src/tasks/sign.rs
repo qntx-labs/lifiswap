@@ -61,7 +61,7 @@ impl BtcSignTask {
 }
 
 /// Sign timeout: 10 minutes (matching TS SDK).
-const SIGN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+const SIGN_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(10);
 
 impl ExecutionTask for BtcSignTask {
     fn should_run<'a>(
@@ -185,11 +185,9 @@ fn prepare_psbt_inputs(psbt: &mut Psbt, signer: &dyn BtcSigner) {
                     ));
                 }
             }
-            Some(AddressType::P2sh) => {
-                if input.redeem_script.is_none() {
-                    let wpkh = Address::p2wpkh(&pubkey, Network::Bitcoin);
-                    input.redeem_script = Some(wpkh.script_pubkey());
-                }
+            Some(AddressType::P2sh) if input.redeem_script.is_none() => {
+                let wpkh = Address::p2wpkh(&pubkey, Network::Bitcoin);
+                input.redeem_script = Some(wpkh.script_pubkey());
             }
             _ => {}
         }
