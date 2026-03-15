@@ -14,7 +14,7 @@ use lifiswap::execution::tasks::{
 };
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{
-    ExecutionOptions, InteractionSettings, LiFiStepExtended, StepExecutorOptions,
+    Chain, ExecutionOptions, InteractionSettings, LiFiStepExtended, StepExecutorOptions,
 };
 
 use crate::signer::EvmSigner;
@@ -126,6 +126,7 @@ impl StepExecutor for EvmStepExecutor {
         step: &'a mut LiFiStepExtended,
         provider: &'a dyn Provider,
         execution_options: &'a ExecutionOptions,
+        from_chain: &'a Chain,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
             let status_manager = StatusManager::new(
@@ -146,6 +147,7 @@ impl StepExecutor for EvmStepExecutor {
                 execution_options,
                 is_bridge_execution: is_bridge,
                 allow_user_interaction: self.interaction.allow_interaction,
+                from_chain,
                 signed_typed_data: Vec::new(),
             };
 

@@ -7,7 +7,7 @@ use super::status::StatusManager;
 use crate::LiFiClient;
 use crate::error::Result;
 use crate::provider::Provider;
-use crate::types::{ExecutionOptions, LiFiStepExtended, SignedTypedData, TaskStatus};
+use crate::types::{Chain, ExecutionOptions, LiFiStepExtended, SignedTypedData, TaskStatus};
 
 /// Context passed to each task in the execution pipeline.
 pub struct ExecutionContext<'a> {
@@ -27,6 +27,8 @@ pub struct ExecutionContext<'a> {
     pub is_bridge_execution: bool,
     /// Whether user interaction is allowed.
     pub allow_user_interaction: bool,
+    /// Source chain metadata (for explorer URLs, etc.).
+    pub from_chain: &'a Chain,
     /// Signed typed data accumulated during the pipeline (permits, etc.).
     pub signed_typed_data: Vec<SignedTypedData>,
 }
@@ -121,6 +123,7 @@ mod tests {
     use super::*;
     use crate::execution::state::ExecutionState;
     use crate::execution::status::StatusManager;
+    use crate::execution::test_helpers::dummy_chain;
     use crate::provider::Provider;
     use crate::types::{ChainType, LiFiStepExtended, StepExecutorOptions, Token, TokenAmount};
 
@@ -171,6 +174,8 @@ mod tests {
         execute_in_background: false,
     };
 
+    static MOCK_CHAIN: std::sync::LazyLock<Chain> = std::sync::LazyLock::new(dummy_chain);
+
     fn make_ctx<'a>(
         client: &'a LiFiClient,
         step: &'a mut LiFiStepExtended,
@@ -185,6 +190,7 @@ mod tests {
             execution_options: &DEFAULT_OPTS,
             is_bridge_execution: false,
             allow_user_interaction: true,
+            from_chain: &MOCK_CHAIN,
             signed_typed_data: Vec::new(),
         }
     }

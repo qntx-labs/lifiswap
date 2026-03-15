@@ -10,8 +10,8 @@ use std::pin::Pin;
 use crate::LiFiClient;
 use crate::error::Result;
 use crate::types::{
-    ChainType, ExecutionOptions, InteractionSettings, LiFiStepExtended, StepExecutorOptions, Token,
-    TokenAmount,
+    Chain, ChainType, ExecutionOptions, InteractionSettings, LiFiStepExtended, StepExecutorOptions,
+    Token, TokenAmount,
 };
 
 /// A chain-specific provider that handles on-chain interactions.
@@ -93,6 +93,7 @@ pub trait StepExecutor: Send + Sync {
         step: &'a mut LiFiStepExtended,
         provider: &'a dyn Provider,
         execution_options: &'a ExecutionOptions,
+        from_chain: &'a Chain,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
 
     /// Update interaction settings (e.g. disable user prompts for background execution).

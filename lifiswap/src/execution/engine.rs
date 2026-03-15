@@ -331,7 +331,7 @@ impl LiFiClient {
                 .map_or_else(|| default_opts.clone(), |d| d.execution_options.clone());
 
             match executor
-                .execute_step(self, step_ref, provider.as_ref(), &opts)
+                .execute_step(self, step_ref, provider.as_ref(), &opts, chain)
                 .await
             {
                 Ok(()) => {}
@@ -346,7 +346,7 @@ impl LiFiClient {
                         create_executor(provider.as_ref(), route_id.clone(), execute_in_background)
                             .await?;
                     executor
-                        .execute_step(self, step_ref, provider.as_ref(), &opts)
+                        .execute_step(self, step_ref, provider.as_ref(), &opts, chain)
                         .await?;
                 }
                 Err(e) => return Err(e),

@@ -21,13 +21,8 @@ impl LiFiClient {
             return Err(LiFiError::Validation("missing walletAddress".into()));
         }
 
-        let url = url::Url::parse(&format!(
-            "{}/wallets/{}/balances?extended=true",
-            self.api_url(),
-            wallet_address
-        ))?;
-
-        let resp: WalletBalancesResponse = self.get_url(&url).await?;
+        let path = format!("/wallets/{wallet_address}/balances");
+        let resp: WalletBalancesResponse = self.get(&path, &[("extended", "true")]).await?;
         Ok(resp.balances)
     }
 }

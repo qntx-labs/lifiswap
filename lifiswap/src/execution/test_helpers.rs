@@ -1,7 +1,8 @@
 //! Shared test helpers for execution module tests.
 
 use crate::types::{
-    Action, ChainId, LiFiStep, LiFiStepExtended, RouteBase, RouteExtended, StepType, Token,
+    Action, Chain, ChainId, ChainType, LiFiStep, LiFiStepExtended, RouteBase, RouteExtended,
+    StepType, Token,
 };
 
 pub fn dummy_token() -> Token {
@@ -44,6 +45,25 @@ pub fn dummy_step(id: &str) -> LiFiStepExtended {
             insurance: None,
         },
         execution: None,
+    }
+}
+
+pub fn dummy_chain() -> Chain {
+    Chain {
+        key: "eth".to_owned(),
+        name: "Ethereum".to_owned(),
+        chain_type: ChainType::EVM,
+        coin: Some("ETH".to_owned()),
+        id: ChainId(1),
+        mainnet: true,
+        logo_uri: None,
+        tokenlist_url: None,
+        faucet_urls: None,
+        multicall_address: None,
+        metamask: None,
+        native_token: None,
+        permit2: None,
+        permit2_proxy: None,
     }
 }
 
