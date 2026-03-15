@@ -22,6 +22,7 @@
 //! ```
 
 mod executor;
+pub mod permit2;
 mod provider;
 pub mod rpc;
 pub mod signer;

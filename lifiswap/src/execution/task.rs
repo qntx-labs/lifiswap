@@ -7,7 +7,7 @@ use super::status::StatusManager;
 use crate::LiFiClient;
 use crate::error::Result;
 use crate::provider::Provider;
-use crate::types::{ExecutionOptions, LiFiStepExtended, TaskStatus};
+use crate::types::{ExecutionOptions, LiFiStepExtended, SignedTypedData, TaskStatus};
 
 /// Context passed to each task in the execution pipeline.
 pub struct ExecutionContext<'a> {
@@ -27,6 +27,8 @@ pub struct ExecutionContext<'a> {
     pub is_bridge_execution: bool,
     /// Whether user interaction is allowed.
     pub allow_user_interaction: bool,
+    /// Signed typed data accumulated during the pipeline (permits, etc.).
+    pub signed_typed_data: Vec<SignedTypedData>,
 }
 
 impl std::fmt::Debug for ExecutionContext<'_> {
@@ -183,6 +185,7 @@ mod tests {
             execution_options: &DEFAULT_OPTS,
             is_bridge_execution: false,
             allow_user_interaction: true,
+            signed_typed_data: Vec::new(),
         }
     }
 

@@ -4,6 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use alloy::ens::ProviderEnsExt as _;
 use alloy::primitives::Address;
 use alloy::providers::{Provider as AlloyProvider, ProviderBuilder};
 use alloy::sol;
@@ -11,7 +12,7 @@ use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{ChainType, StepExecutorOptions, Token, TokenAmount};
 
-use crate::executor::EvmStepExecutor;
+use crate::executor::{EvmStepExecutor, Permit2Config};
 use crate::rpc::RpcUrlResolver;
 use crate::signer::EvmSigner;
 
@@ -34,6 +35,7 @@ pub struct EvmProvider {
     signer: Arc<dyn EvmSigner>,
     rpc_url: url::Url,
     rpc_resolver: Option<Arc<dyn RpcUrlResolver>>,
+    permit2: Option<Permit2Config>,
 }
 
 impl std::fmt::Debug for EvmProvider {
@@ -42,7 +44,7 @@ impl std::fmt::Debug for EvmProvider {
             .field("address", &self.signer.address())
             .field("rpc_url", &self.rpc_url.as_str())
             .field("rpc_resolver", &self.rpc_resolver)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -57,6 +59,7 @@ impl EvmProvider {
             signer: Arc::new(signer),
             rpc_url,
             rpc_resolver: None,
+            permit2: None,
         }
     }
 
@@ -68,6 +71,19 @@ impl EvmProvider {
     #[must_use]
     pub fn with_rpc_resolver(mut self, resolver: impl RpcUrlResolver) -> Self {
         self.rpc_resolver = Some(Arc::new(resolver));
+        self
+    }
+
+    /// Enable Permit2 support with the given contract addresses.
+    ///
+    /// Addresses are typically obtained from the `/chains` API response
+    /// (`Chain.permit2` and `Chain.permit2_proxy`).
+    #[must_use]
+    pub const fn with_permit2(mut self, permit2: Address, permit2_proxy: Address) -> Self {
+        self.permit2 = Some(Permit2Config {
+            permit2,
+            permit2_proxy,
+        });
         self
     }
 
@@ -97,11 +113,23 @@ impl Provider for EvmProvider {
 
     fn resolve_address<'a>(
         &'a self,
-        _name: &'a str,
+        name: &'a str,
         _chain_id: Option<u64>,
     ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
-        // TODO: implement ENS resolution via alloy ENS contract calls
-        Box::pin(async { Ok(None) })
+        Box::pin(async move {
+            if !name.contains('.') {
+                return Ok(None);
+            }
+
+            let rpc = self.rpc_for_chain(1);
+            let provider = ProviderBuilder::new().connect_http(rpc);
+
+            Ok(provider
+                .resolve_name(name)
+                .await
+                .ok()
+                .map(|addr| format!("{addr:#x}")))
+        })
     }
 
     fn get_balance<'a>(
@@ -176,6 +204,7 @@ impl Provider for EvmProvider {
                 Arc::clone(&self.signer),
                 self.rpc_url.clone(),
                 options,
+                self.permit2,
             ));
             Ok(executor)
         })

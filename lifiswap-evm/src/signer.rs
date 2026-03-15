@@ -84,7 +84,7 @@ pub struct LocalSigner {
 impl LocalSigner {
     /// Create a new local signer.
     #[must_use]
-    pub fn new(signer: PrivateKeySigner, rpc_url: url::Url) -> Self {
+    pub const fn new(signer: PrivateKeySigner, rpc_url: url::Url) -> Self {
         Self { signer, rpc_url }
     }
 }
@@ -129,22 +129,15 @@ impl EvmSigner for LocalSigner {
                 "message": typed_data.message,
             });
 
-            let alloy_td: alloy::dyn_abi::eip712::TypedData = serde_json::from_value(json)
-                .map_err(|e| LiFiError::Transaction {
+            let payload: alloy::dyn_abi::eip712::TypedData =
+                serde_json::from_value(json).map_err(|e| LiFiError::Transaction {
                     code: LiFiErrorCode::InternalError,
                     message: format!("Failed to parse EIP-712 typed data: {e}"),
                 })?;
 
-            let hash = alloy_td
-                .eip712_signing_hash()
-                .map_err(|e| LiFiError::Transaction {
-                    code: LiFiErrorCode::InternalError,
-                    message: format!("EIP-712 hashing failed: {e}"),
-                })?;
-
             let sig = self
                 .signer
-                .sign_hash(&hash)
+                .sign_dynamic_typed_data(&payload)
                 .await
                 .map_err(|e| LiFiError::Transaction {
                     code: LiFiErrorCode::TransactionFailed,

@@ -4,6 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use alloy::primitives::Address;
 use lifiswap::LiFiClient;
 use lifiswap::error::Result;
 use lifiswap::execution::status::StatusManager;
@@ -17,22 +18,39 @@ use lifiswap::types::{
 };
 
 use crate::signer::EvmSigner;
-use crate::tasks::{EvmAllowanceTask, EvmRelaySignAndExecuteTask, EvmSignAndExecuteTask};
+use crate::tasks::{
+    EvmAllowanceTask, EvmCheckPermitsTask, EvmRelaySignAndExecuteTask, EvmSignAndExecuteTask,
+};
+
+/// Permit2 contract addresses for a chain.
+///
+/// Set via [`EvmProvider::with_permit2`] to enable Permit2-based gasless
+/// approvals. Addresses are typically obtained from the `/chains` API response
+/// (`Chain.permit2` and `Chain.permit2_proxy`).
+#[derive(Debug, Clone, Copy)]
+pub struct Permit2Config {
+    /// Uniswap Permit2 contract address (used for EIP-712 domain).
+    pub permit2: Address,
+    /// LI.FI `Permit2Proxy` contract address (spender / calldata target).
+    pub permit2_proxy: Address,
+}
 
 /// EVM-specific step executor.
 ///
 /// Builds a [`TaskPipeline`] with the following sequence:
 ///
-/// 1. `CheckBalanceTask` — verify wallet has sufficient funds
-/// 2. `EvmAllowanceTask` — check/reset/set allowance as needed
-/// 3. `PrepareTransactionTask` — fetch transaction data from API
-/// 4. `EvmSignAndExecuteTask` — sign and broadcast the transaction
-/// 5. `WaitForTransactionStatusTask` — poll status until terminal
+/// 1. `EvmCheckPermitsTask` — sign any pre-existing Permit typed data
+/// 2. `CheckBalanceTask` — verify wallet has sufficient funds
+/// 3. `EvmAllowanceTask` — check/reset/set allowance as needed
+/// 4. `PrepareTransactionTask` — fetch transaction data from API
+/// 5. `EvmSignAndExecuteTask` — sign and broadcast (wraps calldata for Permit2)
+/// 6. `WaitForTransactionStatusTask` — poll status until terminal
 pub struct EvmStepExecutor {
     signer: Arc<dyn EvmSigner>,
     rpc_url: url::Url,
     options: StepExecutorOptions,
     interaction: InteractionSettings,
+    permit2: Option<Permit2Config>,
 }
 
 impl std::fmt::Debug for EvmStepExecutor {
@@ -52,12 +70,14 @@ impl EvmStepExecutor {
         signer: Arc<dyn EvmSigner>,
         rpc_url: url::Url,
         options: StepExecutorOptions,
+        permit2: Option<Permit2Config>,
     ) -> Self {
         Self {
             signer,
             rpc_url,
             options,
             interaction: InteractionSettings::default(),
+            permit2,
         }
     }
 
@@ -70,6 +90,8 @@ impl EvmStepExecutor {
             .is_some_and(|td| !td.is_empty());
 
         let mut tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = Vec::new();
+
+        tasks.push(Box::new(EvmCheckPermitsTask::new(Arc::clone(&self.signer))));
 
         if is_relay {
             tasks.push(Box::new(PrepareTransactionTask));
@@ -86,6 +108,7 @@ impl EvmStepExecutor {
             tasks.push(Box::new(EvmSignAndExecuteTask::new(
                 Arc::clone(&self.signer),
                 self.rpc_url.clone(),
+                self.permit2,
             )));
         }
 
@@ -126,6 +149,7 @@ impl StepExecutor for EvmStepExecutor {
                 execution_options,
                 is_bridge_execution: is_bridge,
                 allow_user_interaction: self.interaction.allow_interaction,
+                signed_typed_data: Vec::new(),
             };
 
             pipeline.run(&mut ctx).await?;

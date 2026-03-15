@@ -31,7 +31,7 @@ pub struct RelayResponseData {
     pub task_id: Option<String>,
     /// Transaction link.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transaction_link: Option<String>,
+    pub tx_link: Option<String>,
     /// Error code (when status is "error").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<i32>,

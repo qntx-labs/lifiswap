@@ -18,6 +18,8 @@ use lifiswap::types::{
     TransactionRequestUpdateHook, TransactionRequestUpdateParams,
 };
 
+use crate::executor::Permit2Config;
+use crate::permit2;
 use crate::signer::EvmSigner;
 
 sol! {
@@ -29,8 +31,8 @@ sol! {
 }
 
 fn is_native_token(address: &str) -> bool {
-    address == "0x0000000000000000000000000000000000000000"
-        || address.to_lowercase() == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    address.parse::<Address>().is_ok_and(|a| a.is_zero())
+        || address.eq_ignore_ascii_case("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE")
 }
 
 fn now_ms() -> u64 {
@@ -39,28 +41,20 @@ fn now_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
-/// Poll for a transaction receipt with retries.
+/// Wait for a transaction receipt using alloy's built-in pending transaction watcher.
 async fn wait_for_receipt(
     rpc_url: &url::Url,
     tx_hash: alloy::primitives::B256,
 ) -> Result<TransactionReceipt> {
     let provider = ProviderBuilder::new().connect_http(rpc_url.clone());
-    for _ in 0..120 {
-        match provider.get_transaction_receipt(tx_hash).await {
-            Ok(Some(receipt)) => return Ok(receipt),
-            Ok(None) => tokio::time::sleep(std::time::Duration::from_secs(2)).await,
-            Err(e) => {
-                return Err(LiFiError::Transaction {
-                    code: LiFiErrorCode::TransactionFailed,
-                    message: format!("Failed to fetch receipt: {e}"),
-                });
-            }
-        }
-    }
-    Err(LiFiError::Transaction {
-        code: LiFiErrorCode::Timeout,
-        message: format!("Timed out waiting for receipt: {tx_hash}"),
-    })
+    alloy::providers::PendingTransactionBuilder::new(provider.root().clone(), tx_hash)
+        .with_timeout(Some(std::time::Duration::from_secs(240)))
+        .get_receipt()
+        .await
+        .map_err(|e| LiFiError::Transaction {
+            code: LiFiErrorCode::TransactionFailed,
+            message: format!("Failed to get transaction receipt: {e}"),
+        })
 }
 
 /// Send an ERC-20 `approve` transaction via the signer and wait for confirmation.
@@ -86,12 +80,15 @@ async fn send_approve(
 
     let api_tx = apply_tx_hook(api_tx, TransactionRequestType::Approve, hook).await?;
 
+    let input: Bytes = api_tx
+        .data
+        .as_deref()
+        .and_then(|d| d.parse().ok())
+        .unwrap_or_else(|| Bytes::from(calldata));
+
     let mut tx = TransactionRequest::default();
     tx.set_to(token_addr);
-    tx.set_input(Bytes::from(api_tx.data.as_deref().map_or_else(
-        || Bytes::from(calldata.clone()),
-        |d| d.parse().unwrap_or_else(|_| Bytes::from(calldata.clone())),
-    )));
+    tx.set_input(input);
     if let Some(limit) = api_tx
         .gas_limit
         .as_deref()
@@ -345,9 +342,13 @@ impl ExecutionTask for EvmAllowanceTask {
 }
 
 /// Sign and broadcast the main swap/bridge transaction.
+///
+/// When Permit2 is configured and applicable, wraps the transaction calldata
+/// with a Permit2 or native EIP-2612 permit signature before sending.
 pub struct EvmSignAndExecuteTask {
     signer: Arc<dyn EvmSigner>,
     rpc_url: url::Url,
+    permit2: Option<Permit2Config>,
 }
 
 impl std::fmt::Debug for EvmSignAndExecuteTask {
@@ -360,8 +361,16 @@ impl std::fmt::Debug for EvmSignAndExecuteTask {
 
 impl EvmSignAndExecuteTask {
     /// Create a new sign-and-execute task.
-    pub fn new(signer: Arc<dyn EvmSigner>, rpc_url: url::Url) -> Self {
-        Self { signer, rpc_url }
+    pub fn new(
+        signer: Arc<dyn EvmSigner>,
+        rpc_url: url::Url,
+        permit2: Option<Permit2Config>,
+    ) -> Self {
+        Self {
+            signer,
+            rpc_url,
+            permit2,
+        }
     }
 }
 
@@ -411,9 +420,162 @@ impl ExecutionTask for EvmSignAndExecuteTask {
 
             let gas_limit: Option<u64> = api_tx.gas_limit.as_deref().and_then(|g| g.parse().ok());
 
+            let action_type = if ctx.is_bridge_execution {
+                ExecutionActionType::CrossChain
+            } else {
+                ExecutionActionType::Swap
+            };
+
+            let from_chain_id = ctx.step.action.from_chain_id.0;
+            let from_token = ctx.step.action.from_token.address.clone();
+            let is_native = is_native_token(&from_token);
+            let from_amount: U256 = ctx
+                .step
+                .action
+                .from_amount
+                .as_deref()
+                .unwrap_or("0")
+                .parse()
+                .unwrap_or(U256::ZERO);
+            let from_token_addr: Address = from_token.parse().unwrap_or(Address::ZERO);
+
+            let signed_native_permit = ctx.signed_typed_data.iter().find(|s| {
+                s.typed_data
+                    .as_ref()
+                    .is_some_and(|td| td.primary_type.as_deref() == Some("Permit"))
+                    && s.typed_data.as_ref().is_some_and(|td| {
+                        td.domain
+                            .as_ref()
+                            .and_then(|d| d.get("chainId"))
+                            .and_then(serde_json::Value::as_u64)
+                            == Some(from_chain_id)
+                    })
+            });
+
+            let (final_to, final_data) = if let (Some(permit_cfg), Some(signed)) =
+                (self.permit2, signed_native_permit)
+            {
+                let sig_hex = signed.signature.as_deref().unwrap_or("0x");
+                let sig_bytes: Vec<u8> = sig_hex
+                    .strip_prefix("0x")
+                    .unwrap_or(sig_hex)
+                    .as_bytes()
+                    .chunks(2)
+                    .filter_map(|c| u8::from_str_radix(std::str::from_utf8(c).ok()?, 16).ok())
+                    .collect();
+
+                let msg = signed
+                    .typed_data
+                    .as_ref()
+                    .and_then(|td| td.message.as_ref());
+                let deadline_str = msg
+                    .and_then(|m| m.get("deadline"))
+                    .and_then(|v| v.as_str().or_else(|| v.as_u64().map(|_| "0")))
+                    .unwrap_or("0");
+                let deadline: U256 = deadline_str.parse().unwrap_or(U256::ZERO);
+
+                let v = if sig_bytes.len() == 65 {
+                    sig_bytes[64]
+                } else {
+                    0
+                };
+                let mut r = [0u8; 32];
+                let mut s = [0u8; 32];
+                if sig_bytes.len() >= 64 {
+                    r.copy_from_slice(&sig_bytes[..32]);
+                    s.copy_from_slice(&sig_bytes[32..64]);
+                }
+
+                let wrapped = permit2::encode_native_permit_calldata(
+                    from_token_addr,
+                    from_amount,
+                    deadline,
+                    v,
+                    r,
+                    s,
+                    &call_data,
+                );
+                tracing::info!("wrapping calldata with native EIP-2612 permit");
+                (permit_cfg.permit2_proxy, wrapped)
+            } else if let Some(permit_cfg) = self.permit2.filter(|_| {
+                !is_native
+                    && ctx
+                        .step
+                        .estimate
+                        .as_ref()
+                        .and_then(|e| e.approval_address.as_ref())
+                        .is_some()
+                    && !ctx
+                        .step
+                        .estimate
+                        .as_ref()
+                        .and_then(|e| e.skip_approval)
+                        .unwrap_or(false)
+                    && !ctx
+                        .step
+                        .estimate
+                        .as_ref()
+                        .and_then(|e| e.skip_permit)
+                        .unwrap_or(false)
+            }) {
+                ctx.status_manager.update_action(
+                    ctx.step,
+                    action_type,
+                    ExecutionActionStatus::MessageRequired,
+                    None,
+                )?;
+
+                if !ctx.allow_user_interaction {
+                    return Ok(TaskStatus::Paused);
+                }
+
+                let owner = self.signer.address();
+
+                let nonce =
+                    permit2::fetch_next_nonce(&self.rpc_url, permit_cfg.permit2_proxy, owner)
+                        .await?;
+
+                let permit = permit2::PermitTransferFrom {
+                    token: from_token_addr,
+                    amount: from_amount,
+                    spender: permit_cfg.permit2_proxy,
+                    nonce,
+                    deadline: permit2::default_deadline(),
+                };
+
+                let typed_data =
+                    permit2::build_permit2_typed_data(&permit, permit_cfg.permit2, from_chain_id);
+
+                let signature = self.signer.sign_typed_data(&typed_data).await?;
+                let sig_hex = signature.strip_prefix("0x").unwrap_or(&signature);
+                let sig_bytes: Vec<u8> = sig_hex
+                    .as_bytes()
+                    .chunks(2)
+                    .filter_map(|c| u8::from_str_radix(std::str::from_utf8(c).ok()?, 16).ok())
+                    .collect();
+
+                let wrapped = permit2::encode_permit2_calldata(&call_data, &permit, &sig_bytes);
+
+                ctx.status_manager.update_action(
+                    ctx.step,
+                    action_type,
+                    ExecutionActionStatus::ActionRequired,
+                    None,
+                )?;
+
+                if !ctx.allow_user_interaction {
+                    return Ok(TaskStatus::Paused);
+                }
+
+                tracing::info!("wrapping calldata with Permit2 signature");
+                (permit_cfg.permit2_proxy, wrapped)
+            } else {
+                (to_addr, call_data)
+            };
+
             let mut tx = TransactionRequest::default();
-            tx.set_to(to_addr);
-            tx.set_input(call_data);
+            tx.set_to(final_to);
+            tx.set_input(final_data);
             tx.set_value(value);
 
             if let Some(limit) = gas_limit {
@@ -423,12 +585,6 @@ impl ExecutionTask for EvmSignAndExecuteTask {
             if let Some(chain_id) = api_tx.chain_id {
                 tx.set_chain_id(chain_id);
             }
-
-            let action_type = if ctx.is_bridge_execution {
-                ExecutionActionType::CrossChain
-            } else {
-                ExecutionActionType::Swap
-            };
 
             let tx_hash = self.signer.send_transaction(tx).await?;
             tracing::info!(tx = %tx_hash, "transaction sent");
@@ -564,7 +720,7 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 Some(ActionUpdateParams {
                     tx_hash: relay_resp.task_id.clone(),
                     signed_at: Some(now_ms()),
-                    tx_link: relay_resp.transaction_link.clone(),
+                    tx_link: relay_resp.tx_link.clone(),
                     ..Default::default()
                 }),
             )?;
@@ -573,6 +729,102 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 task_id = ?relay_resp.task_id,
                 "relay transaction submitted"
             );
+
+            Ok(TaskStatus::Completed)
+        })
+    }
+}
+
+/// Sign any `Permit` typed data entries from the step before execution.
+///
+/// Filters `step.typedData` for entries with `primaryType == "Permit"`,
+/// signs each one via [`EvmSigner::sign_typed_data`], and stores the
+/// results in [`ExecutionContext::signed_typed_data`] for downstream tasks.
+pub struct EvmCheckPermitsTask {
+    signer: Arc<dyn EvmSigner>,
+}
+
+impl std::fmt::Debug for EvmCheckPermitsTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EvmCheckPermitsTask")
+            .field("address", &self.signer.address())
+            .finish_non_exhaustive()
+    }
+}
+
+impl EvmCheckPermitsTask {
+    pub fn new(signer: Arc<dyn EvmSigner>) -> Self {
+        Self { signer }
+    }
+}
+
+impl ExecutionTask for EvmCheckPermitsTask {
+    fn should_run<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+        Box::pin(async move {
+            ctx.step.step.typed_data.as_ref().is_some_and(|tds| {
+                tds.iter()
+                    .any(|td| td.primary_type.as_deref() == Some("Permit"))
+            })
+        })
+    }
+
+    fn run<'a>(
+        &'a self,
+        ctx: &'a mut ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+        Box::pin(async move {
+            let from_chain_id = ctx.step.action.from_chain_id.0;
+
+            ctx.status_manager.initialize_action(
+                ctx.step,
+                ExecutionActionType::Permit,
+                from_chain_id,
+                ExecutionActionStatus::Started,
+            )?;
+
+            let permit_entries: Vec<_> = ctx
+                .step
+                .step
+                .typed_data
+                .as_ref()
+                .map(|tds| {
+                    tds.iter()
+                        .filter(|td| td.primary_type.as_deref() == Some("Permit"))
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            for td in &permit_entries {
+                ctx.status_manager.update_action(
+                    ctx.step,
+                    ExecutionActionType::Permit,
+                    ExecutionActionStatus::ActionRequired,
+                    None,
+                )?;
+
+                if !ctx.allow_user_interaction {
+                    return Ok(TaskStatus::Paused);
+                }
+
+                let signature = self.signer.sign_typed_data(td).await?;
+
+                ctx.signed_typed_data
+                    .push(lifiswap::types::SignedTypedData {
+                        typed_data: Some(td.clone()),
+                        signature: Some(signature),
+                    });
+            }
+
+            ctx.status_manager.update_action(
+                ctx.step,
+                ExecutionActionType::Permit,
+                ExecutionActionStatus::Done,
+                None,
+            )?;
 
             Ok(TaskStatus::Completed)
         })
