@@ -144,14 +144,33 @@ impl ExecutionTask for EvmAllowanceTask {
         ctx: &'a ExecutionContext<'_>,
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
-            let token_addr = &ctx.step.action.from_token.address;
-            let has_approval = ctx
-                .step
-                .estimate
-                .as_ref()
-                .and_then(|e| e.approval_address.as_ref())
-                .is_some();
-            !is_native_token(token_addr) && has_approval
+            if is_native_token(&ctx.step.action.from_token.address) {
+                return false;
+            }
+
+            let estimate = match ctx.step.estimate.as_ref() {
+                Some(e) => e,
+                None => return false,
+            };
+
+            if estimate.approval_address.is_none() {
+                return false;
+            }
+
+            if estimate.skip_approval.unwrap_or(false) {
+                return false;
+            }
+
+            let has_pending_tx = ctx.step.execution.as_ref().map_or(false, |exec| {
+                exec.actions.iter().any(|a| {
+                    matches!(
+                        a.action_type,
+                        ExecutionActionType::Swap | ExecutionActionType::CrossChain
+                    ) && (a.tx_hash.is_some() || a.task_id.is_some())
+                })
+            });
+
+            !has_pending_tx
         })
     }
 

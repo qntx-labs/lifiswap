@@ -10,7 +10,7 @@ use std::pin::Pin;
 use crate::error::{LiFiError, LiFiErrorCode, Result};
 use crate::execution::step_comparison::step_comparison;
 use crate::execution::task::{ExecutionContext, ExecutionTask};
-use crate::types::{ExecutionActionStatus, ExecutionActionType, TaskStatus};
+use crate::types::{ExecutionActionStatus, ExecutionActionType, SignedLiFiStep, TaskStatus};
 
 /// Fetches the transaction request data for a step via `getStepTransaction`.
 ///
@@ -50,7 +50,24 @@ impl ExecutionTask for PrepareTransactionTask {
 
             if ctx.step.transaction_request.is_none() {
                 let old_step = ctx.step.step.clone();
-                let updated_step = ctx.client.get_step_transaction(&old_step).await?;
+
+                let signed_entries: Vec<_> = ctx
+                    .signed_typed_data
+                    .iter()
+                    .filter(|s| s.signature.is_some())
+                    .cloned()
+                    .collect();
+
+                let updated_step = if signed_entries.is_empty() {
+                    ctx.client.get_step_transaction(&old_step).await?
+                } else {
+                    ctx.client
+                        .get_step_transaction_with_signatures(&SignedLiFiStep {
+                            step: old_step.clone(),
+                            signed_typed_data: Some(signed_entries),
+                        })
+                        .await?
+                };
 
                 let accept_hook = ctx
                     .execution_options
