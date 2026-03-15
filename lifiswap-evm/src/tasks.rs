@@ -459,3 +459,122 @@ impl ExecutionTask for EvmSignAndExecuteTask {
         })
     }
 }
+
+/// Sign EIP-712 typed data and relay via the LI.FI relayer (gasless).
+///
+/// Flow:
+/// 1. Extract unsigned `typed_data` from the step
+/// 2. Sign each entry via [`EvmSigner::sign_typed_data`]
+/// 3. Submit signed data to `client.relay_transaction()`
+/// 4. Update action with `task_id` for status polling
+pub struct EvmRelaySignAndExecuteTask {
+    signer: Arc<dyn EvmSigner>,
+}
+
+impl std::fmt::Debug for EvmRelaySignAndExecuteTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EvmRelaySignAndExecuteTask")
+            .field("address", &self.signer.address())
+            .finish_non_exhaustive()
+    }
+}
+
+impl EvmRelaySignAndExecuteTask {
+    pub fn new(signer: Arc<dyn EvmSigner>) -> Self {
+        Self { signer }
+    }
+}
+
+impl ExecutionTask for EvmRelaySignAndExecuteTask {
+    fn run<'a>(
+        &'a self,
+        ctx: &'a mut ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+        Box::pin(async move {
+            let unsigned = ctx
+                .step
+                .step
+                .typed_data
+                .as_ref()
+                .ok_or_else(|| LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: "No typed data found for relay transaction.".to_owned(),
+                })?
+                .clone();
+
+            if unsigned.is_empty() {
+                return Err(LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: "Typed data array is empty.".to_owned(),
+                });
+            }
+
+            let action_type = if ctx.is_bridge_execution {
+                ExecutionActionType::CrossChain
+            } else {
+                ExecutionActionType::Swap
+            };
+
+            ctx.status_manager.update_action(
+                ctx.step,
+                action_type,
+                ExecutionActionStatus::ActionRequired,
+                None,
+            )?;
+
+            if !ctx.allow_user_interaction {
+                return Ok(TaskStatus::Paused);
+            }
+
+            let mut signed_data: Vec<serde_json::Value> = Vec::with_capacity(unsigned.len());
+
+            for td in &unsigned {
+                let signature = self.signer.sign_typed_data(td).await?;
+
+                let mut entry = serde_json::to_value(td).map_err(|e| LiFiError::Transaction {
+                    code: LiFiErrorCode::InternalError,
+                    message: format!("Failed to serialize typed data: {e}"),
+                })?;
+
+                if let serde_json::Value::Object(ref mut map) = entry {
+                    map.insert("signature".to_owned(), serde_json::Value::String(signature));
+                }
+
+                signed_data.push(entry);
+            }
+
+            ctx.status_manager.update_action(
+                ctx.step,
+                action_type,
+                ExecutionActionStatus::Pending,
+                None,
+            )?;
+
+            let relay_resp = ctx
+                .client
+                .relay_transaction(&lifiswap::types::RelayRequest {
+                    typed_data: signed_data,
+                })
+                .await?;
+
+            ctx.status_manager.update_action(
+                ctx.step,
+                action_type,
+                ExecutionActionStatus::Pending,
+                Some(ActionUpdateParams {
+                    tx_hash: relay_resp.task_id.clone(),
+                    signed_at: Some(now_ms()),
+                    tx_link: relay_resp.transaction_link.clone(),
+                    ..Default::default()
+                }),
+            )?;
+
+            tracing::info!(
+                task_id = ?relay_resp.task_id,
+                "relay transaction submitted"
+            );
+
+            Ok(TaskStatus::Completed)
+        })
+    }
+}

@@ -17,7 +17,7 @@ use lifiswap::types::{
 };
 
 use crate::signer::EvmSigner;
-use crate::tasks::{EvmAllowanceTask, EvmSignAndExecuteTask};
+use crate::tasks::{EvmAllowanceTask, EvmRelaySignAndExecuteTask, EvmSignAndExecuteTask};
 
 /// EVM-specific step executor.
 ///
@@ -61,19 +61,33 @@ impl EvmStepExecutor {
         }
     }
 
-    fn build_pipeline(&self, is_bridge: bool) -> TaskPipeline {
-        let mut tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = vec![
-            Box::new(CheckBalanceTask),
-            Box::new(EvmAllowanceTask::new(
+    fn build_pipeline(&self, step: &LiFiStepExtended) -> TaskPipeline {
+        let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
+        let is_relay = step
+            .step
+            .typed_data
+            .as_ref()
+            .is_some_and(|td| !td.is_empty());
+
+        let mut tasks: Vec<Box<dyn lifiswap::execution::ExecutionTask>> = Vec::new();
+
+        if is_relay {
+            tasks.push(Box::new(PrepareTransactionTask));
+            tasks.push(Box::new(EvmRelaySignAndExecuteTask::new(Arc::clone(
+                &self.signer,
+            ))));
+        } else {
+            tasks.push(Box::new(CheckBalanceTask));
+            tasks.push(Box::new(EvmAllowanceTask::new(
                 Arc::clone(&self.signer),
                 self.rpc_url.clone(),
-            )),
-            Box::new(PrepareTransactionTask),
-            Box::new(EvmSignAndExecuteTask::new(
+            )));
+            tasks.push(Box::new(PrepareTransactionTask));
+            tasks.push(Box::new(EvmSignAndExecuteTask::new(
                 Arc::clone(&self.signer),
                 self.rpc_url.clone(),
-            )),
-        ];
+            )));
+        }
 
         if is_bridge {
             tasks.push(Box::new(WaitForTransactionStatusTask::receiving_chain()));
@@ -94,15 +108,14 @@ impl StepExecutor for EvmStepExecutor {
         execution_options: &'a ExecutionOptions,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
-            let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
-
             let status_manager = StatusManager::new(
                 self.options.route_id.clone(),
                 client.execution_state().clone(),
             );
             status_manager.initialize_execution(step);
 
-            let pipeline = self.build_pipeline(is_bridge);
+            let pipeline = self.build_pipeline(step);
+            let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
 
             let mut ctx = ExecutionContext {
                 client,

@@ -72,6 +72,12 @@ pub struct Chain {
     /// Native token information.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_token: Option<Token>,
+    /// Permit2 contract address (if deployed on this chain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permit2: Option<String>,
+    /// Permit2 proxy contract address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permit2_proxy: Option<String>,
 }
 
 /// Extended chain with additional metadata returned by the API.
