@@ -2,11 +2,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use alloy::primitives::{Address, U256};
+use alloy::providers::ProviderBuilder;
 use lifiswap::error::Result;
 use lifiswap::execution::task::{ExecutionContext, ExecutionTask};
 use lifiswap::types::{ExecutionActionStatus, ExecutionActionType, TaskStatus};
 
-use super::get_domain_chain_id;
+use super::{IERC20, get_domain_chain_id};
 use crate::executor::Permit2Config;
 use crate::is_native_token;
 use crate::signer::EvmSigner;
@@ -26,6 +28,7 @@ use crate::signer::EvmSigner;
 /// the transaction calldata.
 pub struct EvmNativePermitTask {
     signer: Arc<dyn EvmSigner>,
+    rpc_url: url::Url,
     permit2: Option<Permit2Config>,
 }
 
@@ -38,8 +41,54 @@ impl std::fmt::Debug for EvmNativePermitTask {
 }
 
 impl EvmNativePermitTask {
-    pub fn new(signer: Arc<dyn EvmSigner>, permit2: Option<Permit2Config>) -> Self {
-        Self { signer, permit2 }
+    pub fn new(
+        signer: Arc<dyn EvmSigner>,
+        rpc_url: url::Url,
+        permit2: Option<Permit2Config>,
+    ) -> Self {
+        Self {
+            signer,
+            rpc_url,
+            permit2,
+        }
+    }
+
+    /// Check if existing on-chain allowance covers the transfer amount.
+    ///
+    /// Returns `true` when allowance >= fromAmount (native permit unnecessary).
+    /// Returns `false` on any error so the task runs conservatively.
+    async fn has_sufficient_allowance(&self, ctx: &ExecutionContext<'_>) -> bool {
+        let Some(permit2_cfg) = self.permit2 else {
+            return false;
+        };
+        let Ok(owner) = ctx
+            .step
+            .action
+            .from_address
+            .as_deref()
+            .unwrap_or_default()
+            .parse::<Address>()
+        else {
+            return false;
+        };
+        let Ok(token_addr) = ctx.step.action.from_token.address.parse::<Address>() else {
+            return false;
+        };
+        let from_amount: U256 = ctx
+            .step
+            .action
+            .from_amount
+            .as_deref()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(U256::ZERO);
+
+        let spender = permit2_cfg.permit2;
+        let provider = ProviderBuilder::new().connect_http(self.rpc_url.clone());
+        let contract = IERC20::new(token_addr, &provider);
+        match contract.allowance(owner, spender).call().await {
+            Ok(allowance) => allowance >= from_amount,
+            Err(_) => false,
+        }
     }
 }
 
@@ -82,7 +131,17 @@ impl ExecutionTask for EvmNativePermitTask {
                     .and_then(get_domain_chain_id)
                     .is_some_and(|id| id == from_chain_id)
             });
-            !has_matching
+            if has_matching {
+                return false;
+            }
+
+            // Skip if on-chain allowance is already sufficient (mirrors TS
+            // hasSufficientAllowance check that runs before NativePermit)
+            if self.has_sufficient_allowance(ctx).await {
+                return false;
+            }
+
+            true
         })
     }
 

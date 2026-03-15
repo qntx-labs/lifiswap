@@ -26,6 +26,7 @@ pub struct EvmSignAndExecuteTask {
     signer: Arc<dyn EvmSigner>,
     rpc_url: url::Url,
     permit2: Option<Permit2Config>,
+    disable_message_signing: bool,
 }
 
 impl std::fmt::Debug for EvmSignAndExecuteTask {
@@ -42,11 +43,13 @@ impl EvmSignAndExecuteTask {
         signer: Arc<dyn EvmSigner>,
         rpc_url: url::Url,
         permit2: Option<Permit2Config>,
+        disable_message_signing: bool,
     ) -> Self {
         Self {
             signer,
             rpc_url,
             permit2,
+            disable_message_signing,
         }
     }
 }
@@ -191,7 +194,8 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 tracing::info!("wrapping calldata with native EIP-2612 permit");
                 (permit_cfg.permit2_proxy, wrapped)
             } else if let Some(permit_cfg) = self.permit2.filter(|_| {
-                !is_native
+                !self.disable_message_signing
+                    && !is_native
                     && ctx
                         .step
                         .estimate

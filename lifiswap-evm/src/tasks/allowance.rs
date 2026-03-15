@@ -27,6 +27,7 @@ pub struct EvmAllowanceTask {
     signer: Arc<dyn EvmSigner>,
     rpc_url: url::Url,
     permit2: Option<Permit2Config>,
+    disable_message_signing: bool,
 }
 
 impl std::fmt::Debug for EvmAllowanceTask {
@@ -43,11 +44,13 @@ impl EvmAllowanceTask {
         signer: Arc<dyn EvmSigner>,
         rpc_url: url::Url,
         permit2: Option<Permit2Config>,
+        disable_message_signing: bool,
     ) -> Self {
         Self {
             signer,
             rpc_url,
             permit2,
+            disable_message_signing,
         }
     }
 }
@@ -110,6 +113,7 @@ impl ExecutionTask for EvmAllowanceTask {
                 .map_err(|_| LiFiError::Validation("Invalid from_address.".to_owned()))?;
 
             let is_permit2 = self.permit2.is_some()
+                && !self.disable_message_signing
                 && !is_native_token(&ctx.step.action.from_token.address)
                 && !ctx
                     .step

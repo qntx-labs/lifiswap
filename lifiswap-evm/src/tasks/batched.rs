@@ -142,6 +142,22 @@ impl ExecutionTask for EvmBatchedSignAndExecuteTask {
                         })?;
 
                 if allowance < from_amount {
+                    let needs_reset =
+                        estimate.approval_reset.unwrap_or(false) && allowance > U256::ZERO;
+                    if needs_reset {
+                        let reset_calldata = IERC20::approveCall {
+                            spender,
+                            amount: U256::ZERO,
+                        }
+                        .abi_encode();
+                        calls.push(BatchCall {
+                            to: token_addr,
+                            data: Bytes::from(reset_calldata),
+                            value: U256::ZERO,
+                        });
+                        tracing::debug!("batched: added reset approve(0) call");
+                    }
+
                     let approve_amount = if is_permit2 { U256::MAX } else { from_amount };
                     let calldata = IERC20::approveCall {
                         spender,

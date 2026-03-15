@@ -124,6 +124,15 @@ impl ExecutionTask for EvmWaitForTransactionTask {
 
             tracing::info!(tx = %receipt.transaction_hash, "transaction confirmed");
 
+            if ctx.is_bridge_execution {
+                ctx.status_manager.update_action(
+                    ctx.step,
+                    action_type,
+                    ExecutionActionStatus::Done,
+                    None,
+                )?;
+            }
+
             Ok(TaskStatus::Completed)
         })
     }
