@@ -19,7 +19,7 @@ use lifiswap::execution::status::ActionUpdateParams;
 use lifiswap::execution::task::{ExecutionContext, ExecutionTask};
 use lifiswap::types::{ExecutionActionStatus, ExecutionActionType, TaskStatus};
 
-use super::{get_tx_link, now_ms};
+use super::{BtcTxInputs, get_tx_link, now_ms};
 use crate::api::BlockchainApi;
 use crate::signer::BtcSigner;
 
@@ -29,9 +29,13 @@ use crate::signer::BtcSigner;
 /// The API returns the PSBT as a hex string in `transaction_request.data`.
 /// This task handles all address types: P2PKH, P2SH (nested `SegWit`),
 /// P2WPKH, P2WSH, and P2TR (Taproot).
+///
+/// After broadcast, stores the first input outpoint in shared
+/// [`BtcTxInputs`] for RBF detection by [`BtcConfirmTask`](super::BtcConfirmTask).
 pub struct BtcSignTask {
     signer: Arc<dyn BtcSigner>,
     api: BlockchainApi,
+    tx_inputs: Arc<BtcTxInputs>,
 }
 
 impl std::fmt::Debug for BtcSignTask {
@@ -43,8 +47,16 @@ impl std::fmt::Debug for BtcSignTask {
 }
 
 impl BtcSignTask {
-    pub(crate) fn new(signer: Arc<dyn BtcSigner>, api: BlockchainApi) -> Self {
-        Self { signer, api }
+    pub(crate) fn new(
+        signer: Arc<dyn BtcSigner>,
+        api: BlockchainApi,
+        tx_inputs: Arc<BtcTxInputs>,
+    ) -> Self {
+        Self {
+            signer,
+            api,
+            tx_inputs,
+        }
     }
 }
 
@@ -113,6 +125,13 @@ impl ExecutionTask for BtcSignTask {
                 code: LiFiErrorCode::TransactionFailed,
                 message: format!("Failed to extract transaction from PSBT: {e}"),
             })?;
+
+            // Store first input outpoint for RBF detection by BtcConfirmTask
+            if let Some(first_input) = tx.input.first() {
+                let outpoint = &first_input.previous_output;
+                let mut guard = self.tx_inputs.first_input.lock().expect("tx_inputs lock");
+                *guard = Some((outpoint.txid.to_string(), outpoint.vout));
+            }
 
             let tx_hex = encode::serialize_hex(&tx);
             let tx_hash = self.api.broadcast_tx(&tx_hex).await?;

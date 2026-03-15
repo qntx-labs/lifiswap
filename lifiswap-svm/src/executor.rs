@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use lifiswap::LiFiClient;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::execution::run::run_step_pipeline;
-use lifiswap::execution::task::TaskPipeline;
+use lifiswap::execution::task::{ExecutionTask, TaskPipeline};
 use lifiswap::execution::tasks::{
     CheckBalanceTask, PrepareTransactionTask, WaitForTransactionStatusTask,
 };
@@ -17,9 +17,10 @@ use lifiswap::types::{
 };
 use solana_sdk::transaction::VersionedTransaction;
 
+use crate::jito::JitoClient;
 use crate::rpc::RpcPool;
 use crate::signer::SvmSigner;
-use crate::tasks::{SvmSendAndConfirmTask, SvmSignTask};
+use crate::tasks::{SvmJitoSendAndConfirmTask, SvmSendAndConfirmTask, SvmSignTask};
 
 /// Solana step executor.
 ///
@@ -36,6 +37,7 @@ pub struct SvmStepExecutor {
     options: StepExecutorOptions,
     interaction: InteractionSettings,
     skip_simulation: bool,
+    jito: Option<JitoClient>,
 }
 
 impl std::fmt::Debug for SvmStepExecutor {
@@ -56,6 +58,7 @@ impl SvmStepExecutor {
         rpc_pool: RpcPool,
         options: StepExecutorOptions,
         skip_simulation: bool,
+        jito: Option<JitoClient>,
     ) -> Self {
         Self {
             signer,
@@ -63,6 +66,7 @@ impl SvmStepExecutor {
             options,
             interaction: InteractionSettings::default(),
             skip_simulation,
+            jito,
         }
     }
 
@@ -75,18 +79,29 @@ impl SvmStepExecutor {
             WaitForTransactionStatusTask::swap()
         };
 
-        TaskPipeline::new(vec![
-            Box::new(CheckBalanceTask),
-            Box::new(PrepareTransactionTask),
-            Box::new(SvmSignTask::new(
-                Arc::clone(&self.signer),
+        let sign_task = Box::new(SvmSignTask::new(
+            Arc::clone(&self.signer),
+            Arc::clone(&signed_txs),
+        ));
+
+        let send_confirm_task: Box<dyn ExecutionTask> = if let Some(ref jito) = self.jito {
+            Box::new(SvmJitoSendAndConfirmTask::new(
+                jito.clone(),
                 Arc::clone(&signed_txs),
-            )),
+            ))
+        } else {
             Box::new(SvmSendAndConfirmTask::new(
                 self.rpc_pool.clone(),
                 self.skip_simulation,
                 signed_txs,
-            )),
+            ))
+        };
+
+        TaskPipeline::new(vec![
+            Box::new(CheckBalanceTask),
+            Box::new(PrepareTransactionTask),
+            sign_task,
+            send_confirm_task,
             Box::new(status_task),
         ])
     }

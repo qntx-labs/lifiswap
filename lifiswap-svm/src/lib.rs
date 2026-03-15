@@ -22,10 +22,12 @@
 
 mod errors;
 mod executor;
+pub mod jito;
 mod provider;
 pub mod rpc;
 pub mod signer;
 mod tasks;
 
+pub use jito::JitoClient;
 pub use provider::SvmProvider;
 pub use signer::{KeypairSigner, SvmSigner};

@@ -18,7 +18,7 @@ use lifiswap::types::{
 
 use crate::api::BlockchainApi;
 use crate::signer::BtcSigner;
-use crate::tasks::{BtcConfirmTask, BtcSignTask};
+use crate::tasks::{BtcConfirmTask, BtcSignTask, BtcTxInputs};
 
 /// Executes a single step on the Bitcoin chain.
 ///
@@ -67,11 +67,17 @@ impl BtcStepExecutor {
             WaitForTransactionStatusTask::swap()
         };
 
+        let tx_inputs = Arc::new(BtcTxInputs::default());
+
         TaskPipeline::new(vec![
             Box::new(CheckBalanceTask),
             Box::new(PrepareTransactionTask),
-            Box::new(BtcSignTask::new(Arc::clone(&self.signer), self.api.clone())),
-            Box::new(BtcConfirmTask::new(self.api.clone())),
+            Box::new(BtcSignTask::new(
+                Arc::clone(&self.signer),
+                self.api.clone(),
+                Arc::clone(&tx_inputs),
+            )),
+            Box::new(BtcConfirmTask::new(self.api.clone(), tx_inputs)),
             Box::new(status_task),
         ])
     }

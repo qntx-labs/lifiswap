@@ -171,6 +171,59 @@ impl BlockchainApi {
         .await
     }
 
+    /// Get the full transaction details by txid.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if all backends fail.
+    pub async fn get_tx(&self, txid: &str) -> Result<TxInfo> {
+        self.call_with_retry(|base_url| {
+            let url = format!("{base_url}/tx/{txid}");
+            let client = &self.client;
+            async move {
+                client
+                    .get(&url)
+                    .send()
+                    .await
+                    .map_err(api_error)?
+                    .error_for_status()
+                    .map_err(api_error)?
+                    .json::<TxInfo>()
+                    .await
+                    .map_err(api_error)
+            }
+        })
+        .await
+    }
+
+    /// Check if a specific output has been spent, and if so, by which transaction.
+    ///
+    /// Used for RBF (Replace-By-Fee) detection: when the original tx disappears
+    /// from the mempool, we check if its inputs have been spent by a replacement.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if all backends fail.
+    pub async fn get_outspend(&self, txid: &str, vout: u32) -> Result<OutspendInfo> {
+        self.call_with_retry(|base_url| {
+            let url = format!("{base_url}/tx/{txid}/outspend/{vout}");
+            let client = &self.client;
+            async move {
+                client
+                    .get(&url)
+                    .send()
+                    .await
+                    .map_err(api_error)?
+                    .error_for_status()
+                    .map_err(api_error)?
+                    .json::<OutspendInfo>()
+                    .await
+                    .map_err(api_error)
+            }
+        })
+        .await
+    }
+
     /// Execute an async operation across all backends with sequential fallback.
     async fn call_with_retry<F, Fut, T>(&self, op: F) -> Result<T>
     where
@@ -234,4 +287,33 @@ pub struct TxStatus {
     pub confirmed: bool,
     /// Block height at which the transaction was confirmed.
     pub block_height: Option<u64>,
+}
+
+/// Transaction input reference from mempool.space `/tx/{txid}`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct TxVin {
+    /// The txid of the output being spent.
+    pub txid: String,
+    /// The output index being spent.
+    pub vout: u32,
+}
+
+/// Transaction details from mempool.space `/tx/{txid}`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct TxInfo {
+    /// Transaction ID.
+    pub txid: String,
+    /// Transaction inputs (previous outputs being spent).
+    pub vin: Vec<TxVin>,
+}
+
+/// Output spending info from mempool.space `/tx/{txid}/outspend/{vout}`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct OutspendInfo {
+    /// Whether the output has been spent.
+    pub spent: bool,
+    /// The txid of the spending transaction (if spent).
+    pub txid: Option<String>,
+    /// The input index in the spending transaction.
+    pub vin: Option<u32>,
 }

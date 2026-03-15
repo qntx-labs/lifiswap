@@ -1,8 +1,9 @@
-//! Multi-RPC management with sequential retry.
+//! Multi-RPC management with parallel racing and sequential fallback.
 //!
 //! Mirrors the TS SDK's `rpc/registry.ts` and `rpc/utils.ts`:
-//! maintains a set of Solana RPC clients and retries operations across
-//! them sequentially until one succeeds.
+//! maintains a set of Solana RPC clients. For latency-critical operations
+//! (e.g. send+confirm), all RPCs are raced in parallel (`Promise.any`
+//! style). For simple queries, sequential fallback is used.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -65,6 +66,12 @@ impl RpcPool {
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.clients.is_empty()
+    }
+
+    /// Returns a slice of all RPC clients for parallel operations.
+    #[must_use]
+    pub fn clients(&self) -> &[Arc<RpcClient>] {
+        &self.clients
     }
 
     /// Execute an async operation across all RPCs with sequential fallback.

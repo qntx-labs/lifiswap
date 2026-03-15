@@ -1,8 +1,10 @@
 //! Solana-specific execution tasks.
 
+pub mod jito_send_confirm;
 mod send_confirm;
 mod sign;
 
+pub use jito_send_confirm::SvmJitoSendAndConfirmTask;
 pub use send_confirm::SvmSendAndConfirmTask;
 pub use sign::SvmSignTask;
 

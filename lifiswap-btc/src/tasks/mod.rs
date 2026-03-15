@@ -6,6 +6,18 @@ mod sign;
 pub use confirm::BtcConfirmTask;
 pub use sign::BtcSignTask;
 
+/// Input outpoints from the original transaction, shared between
+/// [`BtcSignTask`] and [`BtcConfirmTask`] for RBF replacement detection.
+///
+/// After signing, `BtcSignTask` stores the first input outpoint so that
+/// `BtcConfirmTask` can detect if the inputs were spent by a different
+/// (replacement) transaction.
+#[derive(Debug, Default)]
+pub struct BtcTxInputs {
+    /// First input outpoint `(prev_txid, prev_vout)` from the broadcast tx.
+    pub first_input: std::sync::Mutex<Option<(String, u32)>>,
+}
+
 /// Construct a block explorer transaction link.
 pub fn get_tx_link(chain: &lifiswap::types::Chain, tx_hash: &str) -> Option<String> {
     chain

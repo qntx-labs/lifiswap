@@ -11,6 +11,7 @@ use solana_sdk::pubkey;
 use solana_sdk::pubkey::Pubkey;
 
 use crate::executor::SvmStepExecutor;
+use crate::jito::JitoClient;
 use crate::rpc::RpcPool;
 use crate::signer::SvmSigner;
 
@@ -50,6 +51,7 @@ pub struct SvmProvider {
     signer: Arc<dyn SvmSigner>,
     rpc_pool: RpcPool,
     skip_simulation: bool,
+    jito: Option<JitoClient>,
 }
 
 impl std::fmt::Debug for SvmProvider {
@@ -70,6 +72,7 @@ impl SvmProvider {
             signer: Arc::new(signer),
             rpc_pool: RpcPool::from_single(rpc_url),
             skip_simulation: false,
+            jito: None,
         }
     }
 
@@ -83,6 +86,7 @@ impl SvmProvider {
             signer: Arc::new(signer),
             rpc_pool: RpcPool::new(rpc_urls)?,
             skip_simulation: false,
+            jito: None,
         })
     }
 
@@ -94,6 +98,17 @@ impl SvmProvider {
     #[must_use]
     pub const fn with_skip_simulation(mut self) -> Self {
         self.skip_simulation = true;
+        self
+    }
+
+    /// Enable Jito bundle submission for MEV-protected transactions.
+    ///
+    /// When enabled, signed transactions are submitted as Jito bundles
+    /// instead of being sent via standard RPCs. The provided [`JitoClient`]
+    /// handles bundle submission and confirmation.
+    #[must_use]
+    pub fn with_jito(mut self, jito: JitoClient) -> Self {
+        self.jito = Some(jito);
         self
     }
 
@@ -198,6 +213,7 @@ impl Provider for SvmProvider {
                 self.rpc_pool.clone(),
                 options,
                 self.skip_simulation,
+                self.jito.clone(),
             ));
             Ok(executor)
         })
