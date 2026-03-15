@@ -108,6 +108,19 @@ pub trait EvmSigner: Send + Sync + std::fmt::Debug + 'static {
         })
     }
 
+    /// Switch the signer to the given chain ID.
+    ///
+    /// Called before signing typed data for permits whose EIP-712 domain
+    /// specifies a different chain than the current one. The default
+    /// implementation is a no-op (suitable for local signers that don't
+    /// require chain switching).
+    fn switch_chain<'a>(
+        &'a self,
+        _chain_id: u64,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+
     /// Whether this signer supports EIP-5792 batch calls (`wallet_sendCalls`).
     ///
     /// When `true`, the execution pipeline batches approve + swap calls

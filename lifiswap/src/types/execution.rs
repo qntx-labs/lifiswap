@@ -117,6 +117,33 @@ pub type GetContractCallsHook = Arc<
         + Sync,
 >;
 
+/// Parameters passed to the [`GetNativePermitHook`].
+#[derive(Debug, Clone)]
+pub struct NativePermitParams {
+    /// Chain ID.
+    pub chain_id: ChainId,
+    /// Token address.
+    pub token_address: String,
+    /// Spender address (typically `permit2_proxy`).
+    pub spender_address: String,
+    /// Sender (owner) address.
+    pub owner_address: String,
+    /// Amount to permit in base units.
+    pub amount: String,
+}
+
+/// Hook invoked to obtain EIP-2612 native permit typed data.
+///
+/// Returns `Some(TypedData)` if the token supports native permits,
+/// `None` otherwise. The implementation is responsible for on-chain
+/// calls to determine permit support (EIP-5267, `DOMAIN_SEPARATOR`,
+/// `nonces`, etc.).
+pub type GetNativePermitHook = Arc<
+    dyn Fn(NativePermitParams) -> Pin<Box<dyn Future<Output = Option<super::TypedData>> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// Overall execution status of a step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -386,6 +413,8 @@ pub struct ExecutionOptions {
     pub update_transaction_request_hook: Option<TransactionRequestUpdateHook>,
     /// Hook called to obtain contract calls for destination chain execution.
     pub get_contract_calls: Option<GetContractCallsHook>,
+    /// Hook called to obtain EIP-2612 native permit typed data.
+    pub get_native_permit: Option<GetNativePermitHook>,
     /// Whether to execute in the background (no user interaction).
     pub execute_in_background: bool,
 }
@@ -408,6 +437,10 @@ impl std::fmt::Debug for ExecutionOptions {
             .field(
                 "get_contract_calls",
                 &self.get_contract_calls.as_ref().map(|_| ".."),
+            )
+            .field(
+                "get_native_permit",
+                &self.get_native_permit.as_ref().map(|_| ".."),
             )
             .field("execute_in_background", &self.execute_in_background)
             .finish()

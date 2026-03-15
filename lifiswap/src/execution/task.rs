@@ -172,6 +172,7 @@ mod tests {
         accept_exchange_rate_update_hook: None,
         update_transaction_request_hook: None,
         get_contract_calls: None,
+        get_native_permit: None,
         execute_in_background: false,
     };
 

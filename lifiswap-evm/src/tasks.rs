@@ -831,9 +831,34 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
     }
 }
 
+/// Extract chain ID from an EIP-712 domain.
+///
+/// Mirrors the TS SDK's `getDomainChainId`: checks `domain.chainId` first,
+/// falls back to parsing `domain.salt` as a numeric chain ID.
+fn get_domain_chain_id(domain: &serde_json::Value) -> Option<u64> {
+    if let Some(chain_id) = domain.get("chainId") {
+        if let Some(n) = chain_id.as_u64() {
+            return Some(n);
+        }
+        if let Some(s) = chain_id.as_str() {
+            if let Ok(n) = s.parse::<u64>() {
+                return Some(n);
+            }
+        }
+    }
+    if let Some(salt) = domain.get("salt").and_then(|v| v.as_str()) {
+        return salt
+            .parse::<u64>()
+            .ok()
+            .or_else(|| u64::from_str_radix(salt.strip_prefix("0x")?, 16).ok());
+    }
+    None
+}
+
 /// Sign any `Permit` typed data entries from the step before execution.
 ///
 /// Filters `step.typedData` for entries with `primaryType == "Permit"`,
+/// switches chain if the permit's EIP-712 domain specifies a different chain,
 /// signs each one via [`EvmSigner::sign_typed_data`], and stores the
 /// results in [`ExecutionContext::signed_typed_data`] for downstream tasks.
 pub struct EvmCheckPermitsTask {
@@ -905,6 +930,16 @@ impl ExecutionTask for EvmCheckPermitsTask {
                     return Ok(TaskStatus::Paused);
                 }
 
+                // Switch chain if the permit's domain specifies a different chain
+                let target_chain_id = td
+                    .domain
+                    .as_ref()
+                    .and_then(get_domain_chain_id)
+                    .unwrap_or(from_chain_id);
+                if target_chain_id != from_chain_id {
+                    self.signer.switch_chain(target_chain_id).await?;
+                }
+
                 let signature = self.signer.sign_typed_data(td).await?;
 
                 ctx.signed_typed_data
@@ -914,9 +949,161 @@ impl ExecutionTask for EvmCheckPermitsTask {
                     });
             }
 
+            // Switch back to the source chain after signing permits
+            if permit_entries.iter().any(|td| {
+                td.domain
+                    .as_ref()
+                    .and_then(get_domain_chain_id)
+                    .is_some_and(|id| id != from_chain_id)
+            }) {
+                self.signer.switch_chain(from_chain_id).await?;
+            }
+
             ctx.status_manager.update_action(
                 ctx.step,
                 ExecutionActionType::Permit,
+                ExecutionActionStatus::Done,
+                None,
+            )?;
+
+            Ok(TaskStatus::Completed)
+        })
+    }
+}
+
+/// Obtain and sign an EIP-2612 native permit if available.
+///
+/// Skips when:
+/// - The token is native (ETH)
+/// - `skipPermit` is set
+/// - No `permit2_proxy` is configured
+/// - Batching is active (approve is included in the batch)
+/// - A matching permit already exists in `signed_typed_data`
+/// - The `get_native_permit` hook is not configured
+///
+/// When a native permit is obtained and signed, it is stored in
+/// [`ExecutionContext::signed_typed_data`] for downstream tasks to wrap
+/// the transaction calldata.
+pub struct EvmNativePermitTask {
+    signer: Arc<dyn EvmSigner>,
+    permit2: Option<Permit2Config>,
+}
+
+impl std::fmt::Debug for EvmNativePermitTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EvmNativePermitTask")
+            .field("address", &self.signer.address())
+            .finish_non_exhaustive()
+    }
+}
+
+impl EvmNativePermitTask {
+    pub fn new(signer: Arc<dyn EvmSigner>, permit2: Option<Permit2Config>) -> Self {
+        Self { signer, permit2 }
+    }
+}
+
+impl ExecutionTask for EvmNativePermitTask {
+    fn should_run<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+        Box::pin(async move {
+            if is_native_token(&ctx.step.action.from_token.address) {
+                return false;
+            }
+            if ctx
+                .step
+                .estimate
+                .as_ref()
+                .and_then(|e| e.skip_permit)
+                .unwrap_or(false)
+            {
+                return false;
+            }
+            // Need permit2_proxy configured
+            if self.permit2.is_none() {
+                return false;
+            }
+            // Skip if batching (approve is in the batch)
+            if self.signer.supports_batching() {
+                return false;
+            }
+            // Skip if hook is not configured
+            if ctx.execution_options.get_native_permit.is_none() {
+                return false;
+            }
+            // Skip if already have a matching permit
+            let from_chain_id = ctx.step.action.from_chain_id.0;
+            let has_matching = ctx.signed_typed_data.iter().any(|s| {
+                s.typed_data
+                    .as_ref()
+                    .and_then(|td| td.domain.as_ref())
+                    .and_then(get_domain_chain_id)
+                    .is_some_and(|id| id == from_chain_id)
+            });
+            !has_matching
+        })
+    }
+
+    fn run<'a>(
+        &'a self,
+        ctx: &'a mut ExecutionContext<'_>,
+    ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
+        Box::pin(async move {
+            let from_chain_id = ctx.step.action.from_chain_id.0;
+            let permit2_proxy = self.permit2.unwrap().permit2_proxy;
+
+            ctx.status_manager.initialize_action(
+                ctx.step,
+                ExecutionActionType::NativePermit,
+                from_chain_id,
+                ExecutionActionStatus::Started,
+            )?;
+
+            let hook = ctx.execution_options.get_native_permit.as_ref().unwrap();
+
+            let permit_data = hook(lifiswap::types::NativePermitParams {
+                chain_id: ctx.step.action.from_chain_id,
+                token_address: ctx.step.action.from_token.address.clone(),
+                spender_address: format!("{permit2_proxy:#x}"),
+                owner_address: ctx.step.action.from_address.clone().unwrap_or_default(),
+                amount: ctx.step.action.from_amount.clone().unwrap_or_default(),
+            })
+            .await;
+
+            let Some(typed_data) = permit_data else {
+                ctx.status_manager.update_action(
+                    ctx.step,
+                    ExecutionActionType::NativePermit,
+                    ExecutionActionStatus::Done,
+                    None,
+                )?;
+                return Ok(TaskStatus::Completed);
+            };
+
+            ctx.status_manager.update_action(
+                ctx.step,
+                ExecutionActionType::NativePermit,
+                ExecutionActionStatus::ActionRequired,
+                None,
+            )?;
+
+            if !ctx.allow_user_interaction {
+                return Ok(TaskStatus::Paused);
+            }
+
+            let signature = self.signer.sign_typed_data(&typed_data).await?;
+
+            ctx.signed_typed_data
+                .push(lifiswap::types::SignedTypedData {
+                    typed_data: Some(typed_data),
+                    signature: Some(signature),
+                });
+
+            ctx.status_manager.update_action(
+                ctx.step,
+                ExecutionActionType::NativePermit,
                 ExecutionActionStatus::Done,
                 None,
             )?;

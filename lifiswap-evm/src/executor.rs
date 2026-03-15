@@ -19,7 +19,7 @@ use lifiswap::types::{
 
 use crate::signer::EvmSigner;
 use crate::tasks::{
-    EvmAllowanceTask, EvmBatchedSignAndExecuteTask, EvmCheckPermitsTask,
+    EvmAllowanceTask, EvmBatchedSignAndExecuteTask, EvmCheckPermitsTask, EvmNativePermitTask,
     EvmRelaySignAndExecuteTask, EvmSignAndExecuteTask,
 };
 
@@ -106,6 +106,10 @@ impl EvmStepExecutor {
                 self.permit2,
             )));
         } else {
+            tasks.push(Box::new(EvmNativePermitTask::new(
+                Arc::clone(&self.signer),
+                self.permit2,
+            )));
             tasks.push(Box::new(CheckBalanceTask));
             tasks.push(Box::new(EvmAllowanceTask::new(
                 Arc::clone(&self.signer),
