@@ -7,14 +7,15 @@ use std::sync::Arc;
 use alloy::primitives::Address;
 use lifiswap::LiFiClient;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
-use lifiswap::execution::status::StatusManager;
+use lifiswap::execution::status::{ExecutionUpdate, StatusManager};
 use lifiswap::execution::task::{ExecutionContext, TaskPipeline};
 use lifiswap::execution::tasks::{
     CheckBalanceTask, PrepareTransactionTask, WaitForTransactionStatusTask,
 };
 use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{
-    Chain, ExecutionOptions, InteractionSettings, LiFiStepExtended, StepExecutorOptions,
+    Chain, ExecutionError, ExecutionOptions, ExecutionStatus, InteractionSettings,
+    LiFiStepExtended, StepExecutorOptions,
 };
 
 use crate::signer::EvmSigner;
@@ -192,10 +193,40 @@ impl StepExecutor for EvmStepExecutor {
                 signed_typed_data: Vec::new(),
             };
 
-            pipeline
-                .run(&mut ctx)
-                .await
-                .map_err(crate::errors::parse_evm_error)?;
+            let result = pipeline.run(&mut ctx).await;
+
+            if let Err(err) = result {
+                let parsed = crate::errors::parse_evm_error(err);
+
+                if !matches!(parsed, LiFiError::StepRetry { .. }) {
+                    let exec_error = error_to_execution_error(&parsed);
+                    let last_action_type =
+                        ctx.step.execution.as_ref().and_then(|e| e.last_action_type);
+
+                    if let Some(action_type) = last_action_type {
+                        let _ = status_manager.update_action(
+                            ctx.step,
+                            action_type,
+                            lifiswap::types::ExecutionActionStatus::Failed,
+                            Some(lifiswap::execution::status::ActionUpdateParams {
+                                error: Some(exec_error),
+                                ..Default::default()
+                            }),
+                        );
+                    } else {
+                        status_manager.update_execution(
+                            ctx.step,
+                            ExecutionUpdate {
+                                status: Some(ExecutionStatus::Failed),
+                                error: Some(exec_error),
+                                ..Default::default()
+                            },
+                        );
+                    }
+                }
+
+                return Err(parsed);
+            }
 
             Ok(())
         })
@@ -207,5 +238,19 @@ impl StepExecutor for EvmStepExecutor {
 
     fn allow_execution(&self) -> bool {
         self.interaction.allow_execution
+    }
+}
+
+fn error_to_execution_error(err: &LiFiError) -> ExecutionError {
+    let code = match err {
+        LiFiError::Transaction { code, .. } | LiFiError::Provider { code, .. } => code.to_string(),
+        LiFiError::Http(details) => details.code.to_string(),
+        LiFiError::Balance(_) => "1013".to_owned(),
+        _ => "1000".to_owned(),
+    };
+    ExecutionError {
+        code,
+        message: err.to_string(),
+        html_message: None,
     }
 }

@@ -5,7 +5,9 @@ use std::sync::Arc;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::execution::status::ActionUpdateParams;
 use lifiswap::execution::task::{ExecutionContext, ExecutionTask};
-use lifiswap::types::{ExecutionActionStatus, ExecutionActionType, TaskStatus};
+use lifiswap::types::{
+    ExecutionActionStatus, ExecutionActionType, TaskStatus, TransactionMethodType,
+};
 
 use super::{get_domain_chain_id, now_ms};
 use crate::signer::EvmSigner;
@@ -230,7 +232,8 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 action_type,
                 ExecutionActionStatus::Pending,
                 Some(ActionUpdateParams {
-                    tx_hash: relay_resp.task_id.clone(),
+                    task_id: relay_resp.task_id.clone(),
+                    tx_type: Some(TransactionMethodType::Relayed),
                     signed_at: Some(now_ms()),
                     tx_link: relay_resp.tx_link.clone(),
                     ..Default::default()

@@ -64,6 +64,23 @@ impl ExecutionTask for EvmSignAndExecuteTask {
         ctx: &'a mut ExecutionContext<'_>,
     ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
         Box::pin(async move {
+            let action_type = if ctx.is_bridge_execution {
+                ExecutionActionType::CrossChain
+            } else {
+                ExecutionActionType::Swap
+            };
+
+            ctx.status_manager.update_action(
+                ctx.step,
+                action_type,
+                ExecutionActionStatus::ActionRequired,
+                None,
+            )?;
+
+            if !ctx.allow_user_interaction {
+                return Ok(TaskStatus::Paused);
+            }
+
             let api_tx =
                 ctx.step
                     .transaction_request
@@ -105,12 +122,6 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 .map_or(U256::ZERO, |v| v.parse().unwrap_or(U256::ZERO));
 
             let gas_limit: Option<u64> = api_tx.gas_limit.as_deref().and_then(|g| g.parse().ok());
-
-            let action_type = if ctx.is_bridge_execution {
-                ExecutionActionType::CrossChain
-            } else {
-                ExecutionActionType::Swap
-            };
 
             let from_chain_id = ctx.step.action.from_chain_id.0;
             let from_token = ctx.step.action.from_token.address.clone();
