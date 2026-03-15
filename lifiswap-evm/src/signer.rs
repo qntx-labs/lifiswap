@@ -6,7 +6,7 @@ use std::pin::Pin;
 use alloy::network::EthereumWallet;
 use alloy::primitives::{Address, B256};
 use alloy::providers::{Provider as _, ProviderBuilder};
-use alloy::rpc::types::TransactionRequest;
+use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 use alloy::signers::Signer as _;
 use alloy::signers::local::PrivateKeySigner;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
@@ -50,6 +50,23 @@ pub trait EvmSigner: Send + Sync + std::fmt::Debug + 'static {
         &'a self,
         tx: TransactionRequest,
     ) -> Pin<Box<dyn Future<Output = Result<B256>> + Send + 'a>>;
+
+    /// Wait for a transaction to be included and return the receipt.
+    ///
+    /// Uses the signer's RPC connection so no separate provider is needed.
+    /// The default implementation returns an error; signers with RPC access
+    /// should override this.
+    fn confirm_transaction<'a>(
+        &'a self,
+        _tx_hash: B256,
+    ) -> Pin<Box<dyn Future<Output = Result<TransactionReceipt>> + Send + 'a>> {
+        Box::pin(async {
+            Err(LiFiError::Transaction {
+                code: LiFiErrorCode::InternalError,
+                message: "This signer does not support transaction confirmation.".to_owned(),
+            })
+        })
+    }
 
     /// Sign EIP-712 typed data, returning the hex-encoded signature.
     ///
@@ -114,6 +131,23 @@ impl EvmSigner for LocalSigner {
                     })?;
 
             Ok(*pending.tx_hash())
+        })
+    }
+
+    fn confirm_transaction<'a>(
+        &'a self,
+        tx_hash: B256,
+    ) -> Pin<Box<dyn Future<Output = Result<TransactionReceipt>> + Send + 'a>> {
+        Box::pin(async move {
+            let provider = ProviderBuilder::new().connect_http(self.rpc_url.clone());
+            alloy::providers::PendingTransactionBuilder::new(provider.root().clone(), tx_hash)
+                .with_timeout(Some(std::time::Duration::from_secs(240)))
+                .get_receipt()
+                .await
+                .map_err(|e| LiFiError::Transaction {
+                    code: LiFiErrorCode::TransactionFailed,
+                    message: format!("Failed to get transaction receipt: {e}"),
+                })
         })
     }
 

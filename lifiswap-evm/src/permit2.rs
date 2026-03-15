@@ -29,7 +29,7 @@ sol! {
             bytes calldata diamondCalldata,
             PermitTransferFromData permit,
             bytes calldata signature
-        ) external;
+        ) external payable returns (bytes);
 
         function callDiamondWithEIP2612Signature(
             address token,
@@ -39,14 +39,14 @@ sol! {
             bytes32 r,
             bytes32 s,
             bytes calldata diamondCalldata
-        ) external payable;
+        ) external payable returns (bytes);
 
         function callDiamondWithPermit2Witness(
             bytes calldata diamondCalldata,
             address owner,
             PermitTransferFromData permit,
             bytes calldata signature
-        ) external payable;
+        ) external payable returns (bytes);
 
         function nextNonce(address owner) external view returns (uint256);
     }

@@ -28,7 +28,7 @@ bon = "3"
 backon = { version = "1", features = ["tokio-sleep"] }
 wiremock = "0.6"
 dashmap = "6"
-alloy = { version = "1", features = ["full"] }
+alloy = { version = "1", features = ["full", "dyn-abi", "eip712", "ens"] }
 
 [profile.release]
 codegen-units = 1

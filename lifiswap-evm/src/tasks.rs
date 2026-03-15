@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, Bytes, U256};
-use alloy::providers::{Provider as _, ProviderBuilder};
-use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
+use alloy::providers::ProviderBuilder;
+use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::sol_types::SolCall as _;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
@@ -41,26 +41,9 @@ fn now_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
-/// Wait for a transaction receipt using alloy's built-in pending transaction watcher.
-async fn wait_for_receipt(
-    rpc_url: &url::Url,
-    tx_hash: alloy::primitives::B256,
-) -> Result<TransactionReceipt> {
-    let provider = ProviderBuilder::new().connect_http(rpc_url.clone());
-    alloy::providers::PendingTransactionBuilder::new(provider.root().clone(), tx_hash)
-        .with_timeout(Some(std::time::Duration::from_secs(240)))
-        .get_receipt()
-        .await
-        .map_err(|e| LiFiError::Transaction {
-            code: LiFiErrorCode::TransactionFailed,
-            message: format!("Failed to get transaction receipt: {e}"),
-        })
-}
-
 /// Send an ERC-20 `approve` transaction via the signer and wait for confirmation.
 async fn send_approve(
     signer: &dyn EvmSigner,
-    rpc_url: &url::Url,
     token_addr: Address,
     spender: Address,
     amount: U256,
@@ -86,9 +69,9 @@ async fn send_approve(
         .and_then(|d| d.parse().ok())
         .unwrap_or_else(|| Bytes::from(calldata));
 
-    let mut tx = TransactionRequest::default();
-    tx.set_to(token_addr);
-    tx.set_input(input);
+    let mut tx = TransactionRequest::default()
+        .with_to(token_addr)
+        .with_input(input);
     if let Some(limit) = api_tx
         .gas_limit
         .as_deref()
@@ -99,7 +82,7 @@ async fn send_approve(
 
     let tx_hash = signer.send_transaction(tx).await?;
 
-    let receipt = wait_for_receipt(rpc_url, tx_hash).await?;
+    let receipt = signer.confirm_transaction(tx_hash).await?;
     if !receipt.status() {
         return Err(LiFiError::Transaction {
             code: LiFiErrorCode::TransactionFailed,
@@ -276,15 +259,8 @@ impl ExecutionTask for EvmAllowanceTask {
                     .execution_options
                     .update_transaction_request_hook
                     .as_ref();
-                let tx_hash = send_approve(
-                    &*self.signer,
-                    &self.rpc_url,
-                    token_addr,
-                    spender,
-                    U256::ZERO,
-                    hook,
-                )
-                .await?;
+                let tx_hash =
+                    send_approve(&*self.signer, token_addr, spender, U256::ZERO, hook).await?;
 
                 tracing::info!(tx = %tx_hash, "allowance reset to zero");
 
@@ -314,15 +290,7 @@ impl ExecutionTask for EvmAllowanceTask {
                 .execution_options
                 .update_transaction_request_hook
                 .as_ref();
-            let tx_hash = send_approve(
-                &*self.signer,
-                &self.rpc_url,
-                token_addr,
-                spender,
-                U256::MAX,
-                hook,
-            )
-            .await?;
+            let tx_hash = send_approve(&*self.signer, token_addr, spender, U256::MAX, hook).await?;
 
             tracing::info!(tx = %tx_hash, "allowance approved");
 
@@ -456,13 +424,9 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 (self.permit2, signed_native_permit)
             {
                 let sig_hex = signed.signature.as_deref().unwrap_or("0x");
-                let sig_bytes: Vec<u8> = sig_hex
-                    .strip_prefix("0x")
-                    .unwrap_or(sig_hex)
-                    .as_bytes()
-                    .chunks(2)
-                    .filter_map(|c| u8::from_str_radix(std::str::from_utf8(c).ok()?, 16).ok())
-                    .collect();
+                let sig_bytes = alloy::hex::decode(sig_hex).map_err(|e| {
+                    LiFiError::Validation(format!("Invalid permit signature hex: {e}"))
+                })?;
 
                 let msg = signed
                     .typed_data
@@ -547,12 +511,9 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                     permit2::build_permit2_typed_data(&permit, permit_cfg.permit2, from_chain_id);
 
                 let signature = self.signer.sign_typed_data(&typed_data).await?;
-                let sig_hex = signature.strip_prefix("0x").unwrap_or(&signature);
-                let sig_bytes: Vec<u8> = sig_hex
-                    .as_bytes()
-                    .chunks(2)
-                    .filter_map(|c| u8::from_str_radix(std::str::from_utf8(c).ok()?, 16).ok())
-                    .collect();
+                let sig_bytes = alloy::hex::decode(&signature).map_err(|e| {
+                    LiFiError::Validation(format!("Invalid Permit2 signature hex: {e}"))
+                })?;
 
                 let wrapped = permit2::encode_permit2_calldata(&call_data, &permit, &sig_bytes);
 
@@ -573,10 +534,10 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 (to_addr, call_data)
             };
 
-            let mut tx = TransactionRequest::default();
-            tx.set_to(final_to);
-            tx.set_input(final_data);
-            tx.set_value(value);
+            let mut tx = TransactionRequest::default()
+                .with_to(final_to)
+                .with_input(final_data)
+                .with_value(value);
 
             if let Some(limit) = gas_limit {
                 tx.set_gas_limit(limit);
@@ -600,7 +561,7 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 }),
             )?;
 
-            let receipt = wait_for_receipt(&self.rpc_url, tx_hash).await?;
+            let receipt = self.signer.confirm_transaction(tx_hash).await?;
 
             if !receipt.status() {
                 return Err(LiFiError::Transaction {
