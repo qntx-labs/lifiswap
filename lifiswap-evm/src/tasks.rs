@@ -13,7 +13,10 @@ use alloy::sol_types::SolCall as _;
 use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::execution::status::ActionUpdateParams;
 use lifiswap::execution::task::{ExecutionContext, ExecutionTask};
-use lifiswap::types::{ExecutionActionStatus, ExecutionActionType, TaskStatus};
+use lifiswap::types::{
+    ExecutionActionStatus, ExecutionActionType, TaskStatus, TransactionRequestType,
+    TransactionRequestUpdateHook, TransactionRequestUpdateParams,
+};
 
 use crate::signer::EvmSigner;
 
@@ -67,11 +70,35 @@ async fn send_approve(
     token_addr: Address,
     spender: Address,
     amount: U256,
+    hook: Option<&TransactionRequestUpdateHook>,
 ) -> Result<alloy::primitives::B256> {
     let calldata = IERC20::approveCall { spender, amount }.abi_encode();
+
+    let api_tx = lifiswap::types::TransactionRequest {
+        to: Some(format!("{token_addr:#x}")),
+        from: None,
+        data: Some(format!("0x{}", alloy::hex::encode(&calldata))),
+        value: None,
+        gas_price: None,
+        gas_limit: None,
+        chain_id: None,
+    };
+
+    let api_tx = apply_tx_hook(api_tx, TransactionRequestType::Approve, hook).await?;
+
     let mut tx = TransactionRequest::default();
     tx.set_to(token_addr);
-    tx.set_input(Bytes::from(calldata));
+    tx.set_input(Bytes::from(api_tx.data.as_deref().map_or_else(
+        || Bytes::from(calldata.clone()),
+        |d| d.parse().unwrap_or_else(|_| Bytes::from(calldata.clone())),
+    )));
+    if let Some(limit) = api_tx
+        .gas_limit
+        .as_deref()
+        .and_then(|g| g.parse::<u64>().ok())
+    {
+        tx.set_gas_limit(limit);
+    }
 
     let tx_hash = signer.send_transaction(tx).await?;
 
@@ -84,6 +111,22 @@ async fn send_approve(
     }
 
     Ok(tx_hash)
+}
+
+/// Apply the user's transaction request update hook, if present.
+async fn apply_tx_hook(
+    tx: lifiswap::types::TransactionRequest,
+    request_type: TransactionRequestType,
+    hook: Option<&TransactionRequestUpdateHook>,
+) -> Result<lifiswap::types::TransactionRequest> {
+    match hook {
+        Some(hook) => Ok(hook(TransactionRequestUpdateParams {
+            request_type,
+            transaction: tx,
+        })
+        .await),
+        None => Ok(tx),
+    }
 }
 
 /// Check, reset, and set ERC-20 token allowance for the approval address.
@@ -232,12 +275,17 @@ impl ExecutionTask for EvmAllowanceTask {
                     return Ok(TaskStatus::Paused);
                 }
 
+                let hook = ctx
+                    .execution_options
+                    .update_transaction_request_hook
+                    .as_ref();
                 let tx_hash = send_approve(
                     &*self.signer,
                     &self.rpc_url,
                     token_addr,
                     spender,
                     U256::ZERO,
+                    hook,
                 )
                 .await?;
 
@@ -265,8 +313,19 @@ impl ExecutionTask for EvmAllowanceTask {
                 return Ok(TaskStatus::Paused);
             }
 
-            let tx_hash =
-                send_approve(&*self.signer, &self.rpc_url, token_addr, spender, U256::MAX).await?;
+            let hook = ctx
+                .execution_options
+                .update_transaction_request_hook
+                .as_ref();
+            let tx_hash = send_approve(
+                &*self.signer,
+                &self.rpc_url,
+                token_addr,
+                spender,
+                U256::MAX,
+                hook,
+            )
+            .await?;
 
             tracing::info!(tx = %tx_hash, "allowance approved");
 
@@ -312,14 +371,20 @@ impl ExecutionTask for EvmSignAndExecuteTask {
         ctx: &'a mut ExecutionContext<'_>,
     ) -> Pin<Box<dyn Future<Output = Result<TaskStatus>> + Send + 'a>> {
         Box::pin(async move {
-            let tx_request = ctx.step.step.transaction_request.as_ref().ok_or_else(|| {
+            let api_tx = ctx.step.step.transaction_request.clone().ok_or_else(|| {
                 LiFiError::Transaction {
                     code: LiFiErrorCode::InternalError,
                     message: "No transaction request data available.".to_owned(),
                 }
             })?;
 
-            let to_addr: Address = tx_request
+            let hook = ctx
+                .execution_options
+                .update_transaction_request_hook
+                .as_ref();
+            let api_tx = apply_tx_hook(api_tx, TransactionRequestType::Transaction, hook).await?;
+
+            let to_addr: Address = api_tx
                 .to
                 .as_deref()
                 .ok_or_else(|| LiFiError::Transaction {
@@ -329,7 +394,7 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 .parse()
                 .map_err(|_| LiFiError::Validation("Invalid 'to' address.".to_owned()))?;
 
-            let call_data: Bytes = tx_request
+            let call_data: Bytes = api_tx
                 .data
                 .as_deref()
                 .ok_or_else(|| LiFiError::Transaction {
@@ -339,13 +404,12 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 .parse()
                 .map_err(|_| LiFiError::Validation("Invalid transaction data hex.".to_owned()))?;
 
-            let value: U256 = tx_request
+            let value: U256 = api_tx
                 .value
                 .as_deref()
                 .map_or(U256::ZERO, |v| v.parse().unwrap_or(U256::ZERO));
 
-            let gas_limit: Option<u64> =
-                tx_request.gas_limit.as_deref().and_then(|g| g.parse().ok());
+            let gas_limit: Option<u64> = api_tx.gas_limit.as_deref().and_then(|g| g.parse().ok());
 
             let mut tx = TransactionRequest::default();
             tx.set_to(to_addr);
@@ -356,7 +420,7 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 tx.set_gas_limit(limit);
             }
 
-            if let Some(chain_id) = tx_request.chain_id {
+            if let Some(chain_id) = api_tx.chain_id {
                 tx.set_chain_id(chain_id);
             }
 

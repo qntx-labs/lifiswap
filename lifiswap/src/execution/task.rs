@@ -7,7 +7,7 @@ use super::status::StatusManager;
 use crate::LiFiClient;
 use crate::error::Result;
 use crate::provider::Provider;
-use crate::types::{LiFiStepExtended, TaskStatus};
+use crate::types::{ExecutionOptions, LiFiStepExtended, TaskStatus};
 
 /// Context passed to each task in the execution pipeline.
 pub struct ExecutionContext<'a> {
@@ -21,6 +21,8 @@ pub struct ExecutionContext<'a> {
     pub provider: &'a dyn Provider,
     /// The route ID this step belongs to.
     pub route_id: &'a str,
+    /// Execution options (hooks, background mode).
+    pub execution_options: &'a ExecutionOptions,
     /// Whether this is a cross-chain bridge execution.
     pub is_bridge_execution: bool,
     /// Whether user interaction is allowed.
@@ -160,6 +162,13 @@ mod tests {
 
     use crate::execution::test_helpers::dummy_step;
 
+    static DEFAULT_OPTS: ExecutionOptions = ExecutionOptions {
+        update_route_hook: None,
+        accept_exchange_rate_update_hook: None,
+        update_transaction_request_hook: None,
+        execute_in_background: false,
+    };
+
     fn make_ctx<'a>(
         client: &'a LiFiClient,
         step: &'a mut LiFiStepExtended,
@@ -171,6 +180,7 @@ mod tests {
             status_manager: mgr,
             provider: &MOCK_PROVIDER,
             route_id: "test-route",
+            execution_options: &DEFAULT_OPTS,
             is_bridge_execution: false,
             allow_user_interaction: true,
         }

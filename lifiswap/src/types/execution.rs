@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use super::{FeeCost, GasCost, Token};
+use super::{FeeCost, GasCost, Token, TransactionRequest};
 
 /// Callback invoked whenever a route is updated during execution.
 pub type UpdateRouteHook = Arc<dyn Fn(&RouteExtended) + Send + Sync>;
@@ -30,6 +30,37 @@ pub struct ExchangeRateUpdateParams {
 /// async boundaries.
 pub type AcceptExchangeRateUpdateHook = Arc<
     dyn Fn(ExchangeRateUpdateParams) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync,
+>;
+
+/// Whether the transaction being updated is an approval or the main swap/bridge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionRequestType {
+    /// ERC-20 `approve` transaction.
+    Approve,
+    /// Main swap or bridge transaction.
+    Transaction,
+}
+
+/// Parameters passed to the transaction request update hook.
+#[derive(Debug, Clone)]
+pub struct TransactionRequestUpdateParams {
+    /// The kind of transaction (approve vs. swap/bridge).
+    pub request_type: TransactionRequestType,
+    /// The transaction request to be modified.
+    pub transaction: TransactionRequest,
+}
+
+/// Hook invoked before a transaction is signed, allowing the caller to
+/// modify gas parameters, calldata, etc.
+///
+/// The hook receives the current [`TransactionRequest`] and should return
+/// a (possibly modified) version.
+pub type TransactionRequestUpdateHook = Arc<
+    dyn Fn(
+            TransactionRequestUpdateParams,
+        ) -> Pin<Box<dyn Future<Output = TransactionRequest> + Send>>
+        + Send
+        + Sync,
 >;
 
 /// Overall execution status of a step.
@@ -289,13 +320,16 @@ impl Default for InteractionSettings {
 }
 
 /// Options for configuring route execution behavior.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ExecutionOptions {
     /// Hook called whenever the route is updated during execution.
     pub update_route_hook: Option<UpdateRouteHook>,
     /// Hook called when the exchange rate changes beyond the slippage threshold.
     /// Return `true` to accept the new rate, `false` to cancel.
     pub accept_exchange_rate_update_hook: Option<AcceptExchangeRateUpdateHook>,
+    /// Hook called before a transaction is signed, allowing modification of
+    /// gas parameters, calldata, etc.
+    pub update_transaction_request_hook: Option<TransactionRequestUpdateHook>,
     /// Whether to execute in the background (no user interaction).
     pub execute_in_background: bool,
 }
@@ -310,6 +344,10 @@ impl std::fmt::Debug for ExecutionOptions {
             .field(
                 "accept_exchange_rate_update_hook",
                 &self.accept_exchange_rate_update_hook.as_ref().map(|_| ".."),
+            )
+            .field(
+                "update_transaction_request_hook",
+                &self.update_transaction_request_hook.as_ref().map(|_| ".."),
             )
             .field("execute_in_background", &self.execute_in_background)
             .finish()

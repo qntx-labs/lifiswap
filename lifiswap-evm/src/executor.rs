@@ -12,7 +12,9 @@ use lifiswap::execution::tasks::{
     CheckBalanceTask, PrepareTransactionTask, WaitForTransactionStatusTask,
 };
 use lifiswap::provider::{Provider, StepExecutor};
-use lifiswap::types::{InteractionSettings, LiFiStepExtended, StepExecutorOptions};
+use lifiswap::types::{
+    ExecutionOptions, InteractionSettings, LiFiStepExtended, StepExecutorOptions,
+};
 
 use crate::signer::EvmSigner;
 use crate::tasks::{EvmAllowanceTask, EvmSignAndExecuteTask};
@@ -89,6 +91,7 @@ impl StepExecutor for EvmStepExecutor {
         client: &'a LiFiClient,
         step: &'a mut LiFiStepExtended,
         provider: &'a dyn Provider,
+        execution_options: &'a ExecutionOptions,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
             let is_bridge = step.action.from_chain_id != step.action.to_chain_id;
@@ -107,6 +110,7 @@ impl StepExecutor for EvmStepExecutor {
                 status_manager: &status_manager,
                 provider,
                 route_id: &self.options.route_id,
+                execution_options,
                 is_bridge_execution: is_bridge,
                 allow_user_interaction: self.interaction.allow_interaction,
             };

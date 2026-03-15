@@ -53,14 +53,9 @@ impl ExecutionTask for PrepareTransactionTask {
                 let updated_step = ctx.client.get_step_transaction(&old_step).await?;
 
                 let accept_hook = ctx
-                    .client
-                    .execution_state()
-                    .get(ctx.route_id)
-                    .and_then(|data| {
-                        data.execution_options
-                            .accept_exchange_rate_update_hook
-                            .clone()
-                    });
+                    .execution_options
+                    .accept_exchange_rate_update_hook
+                    .clone();
 
                 let validated = step_comparison(
                     &old_step,

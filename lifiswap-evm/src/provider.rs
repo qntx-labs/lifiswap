@@ -12,6 +12,7 @@ use lifiswap::provider::{Provider, StepExecutor};
 use lifiswap::types::{ChainType, StepExecutorOptions, Token, TokenAmount};
 
 use crate::executor::EvmStepExecutor;
+use crate::rpc::RpcUrlResolver;
 use crate::signer::EvmSigner;
 
 sol! {
@@ -32,6 +33,7 @@ sol! {
 pub struct EvmProvider {
     signer: Arc<dyn EvmSigner>,
     rpc_url: url::Url,
+    rpc_resolver: Option<Arc<dyn RpcUrlResolver>>,
 }
 
 impl std::fmt::Debug for EvmProvider {
@@ -39,6 +41,7 @@ impl std::fmt::Debug for EvmProvider {
         f.debug_struct("EvmProvider")
             .field("address", &self.signer.address())
             .field("rpc_url", &self.rpc_url.as_str())
+            .field("rpc_resolver", &self.rpc_resolver)
             .finish()
     }
 }
@@ -53,13 +56,33 @@ impl EvmProvider {
         Self {
             signer: Arc::new(signer),
             rpc_url,
+            rpc_resolver: None,
         }
+    }
+
+    /// Attach an [`RpcUrlResolver`] for multi-chain RPC endpoint resolution.
+    ///
+    /// When set, `get_balance` and other read operations will use the resolver
+    /// to find the appropriate RPC endpoint for a given chain ID, falling back
+    /// to the default `rpc_url` if the resolver returns `None`.
+    #[must_use]
+    pub fn with_rpc_resolver(mut self, resolver: impl RpcUrlResolver) -> Self {
+        self.rpc_resolver = Some(Arc::new(resolver));
+        self
     }
 
     /// Returns the wallet address derived from the signer.
     #[must_use]
     pub fn address(&self) -> Address {
         self.signer.address()
+    }
+
+    /// Resolve the RPC URL for a given chain, falling back to the default.
+    fn rpc_for_chain(&self, chain_id: u64) -> url::Url {
+        self.rpc_resolver
+            .as_ref()
+            .and_then(|r| r.resolve(chain_id))
+            .unwrap_or_else(|| self.rpc_url.clone())
     }
 }
 
@@ -91,7 +114,9 @@ impl Provider for EvmProvider {
                 LiFiError::Validation(format!("Invalid EVM address: {wallet_address}"))
             })?;
 
-            let provider = ProviderBuilder::new().connect_http(self.rpc_url.clone());
+            let chain_id = tokens.first().map_or(0, |t| t.chain_id.0);
+            let rpc = self.rpc_for_chain(chain_id);
+            let provider = ProviderBuilder::new().connect_http(rpc);
 
             let native_balance =
                 provider

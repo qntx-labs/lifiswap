@@ -23,8 +23,10 @@
 
 mod executor;
 mod provider;
+pub mod rpc;
 pub mod signer;
 mod tasks;
 
 pub use provider::EvmProvider;
+pub use rpc::{RpcUrlResolver, StaticRpcUrls};
 pub use signer::{EvmSigner, LocalSigner};
