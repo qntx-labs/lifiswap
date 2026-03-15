@@ -9,7 +9,8 @@ use lifiswap::error::{LiFiError, LiFiErrorCode, Result};
 use lifiswap::execution::status::ActionUpdateParams;
 use lifiswap::execution::task::{ExecutionContext, ExecutionTask};
 use lifiswap::types::{
-    ExecutionActionStatus, ExecutionActionType, TaskStatus, TransactionRequestType,
+    ExecutionActionStatus, ExecutionActionType, TaskStatus, TransactionMethodType,
+    TransactionRequestType,
 };
 
 use super::{GAS_BUFFER, apply_tx_hook, estimate_gas, fetch_max_priority_fee, get_tx_link, now_ms};
@@ -306,6 +307,7 @@ impl ExecutionTask for EvmSignAndExecuteTask {
                 Some(ActionUpdateParams {
                     tx_hash: Some(tx_hash_str),
                     tx_link,
+                    tx_type: Some(TransactionMethodType::Standard),
                     signed_at: Some(now_ms()),
                     ..Default::default()
                 }),

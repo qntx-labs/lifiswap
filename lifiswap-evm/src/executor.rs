@@ -129,11 +129,13 @@ impl EvmStepExecutor {
                 self.permit2,
             )));
         } else {
-            tasks.push(Box::new(EvmNativePermitTask::new(
-                Arc::clone(&self.signer),
-                self.rpc_url.clone(),
-                self.permit2,
-            )));
+            if !disable_signing {
+                tasks.push(Box::new(EvmNativePermitTask::new(
+                    Arc::clone(&self.signer),
+                    self.rpc_url.clone(),
+                    self.permit2,
+                )));
+            }
             tasks.push(Box::new(CheckBalanceTask));
             tasks.push(Box::new(EvmAllowanceTask::new(
                 Arc::clone(&self.signer),

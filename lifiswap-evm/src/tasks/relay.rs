@@ -73,15 +73,16 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 ExecutionActionType::Swap
             };
 
-            // Filter out typed data entries that have already been signed as permits
+            // Filter out typed data entries that have already been signed
             let intent_typed_data: Vec<_> = all_typed_data
                 .iter()
                 .filter(|td| {
                     !ctx.signed_typed_data.iter().any(|signed| {
-                        signed
-                            .typed_data
-                            .as_ref()
-                            .is_some_and(|std| std.primary_type == td.primary_type)
+                        signed.typed_data.as_ref().is_some_and(|std| {
+                            std.primary_type == td.primary_type
+                                && std.domain.as_ref().and_then(get_domain_chain_id)
+                                    == td.domain.as_ref().and_then(get_domain_chain_id)
+                        })
                     })
                 })
                 .collect();
@@ -244,6 +245,15 @@ impl ExecutionTask for EvmRelaySignAndExecuteTask {
                 task_id = ?relay_resp.task_id,
                 "relay transaction submitted"
             );
+
+            if ctx.is_bridge_execution {
+                ctx.status_manager.update_action(
+                    ctx.step,
+                    action_type,
+                    ExecutionActionStatus::Done,
+                    None,
+                )?;
+            }
 
             Ok(TaskStatus::Completed)
         })
