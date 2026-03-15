@@ -11,6 +11,27 @@ name = "lifiswap"
 path = "src/main.rs"
 
 [dependencies]
+lifiswap = { workspace = true }
+lifiswap-evm = { workspace = true }
+lifiswap-svm = { workspace = true }
+lifiswap-btc = { workspace = true }
+
+clap = { version = "4", features = ["derive", "env", "color"] }
+tokio = { workspace = true }
+comfy-table = "7"
+console = "0.15"
+indicatif = "0.17"
+dialoguer = "0.11"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+anyhow = "1"
+alloy = { workspace = true }
+solana-sdk = { workspace = true }
+bitcoin = { workspace = true }
+url = { workspace = true }
 
 [lints]
 workspace = true
