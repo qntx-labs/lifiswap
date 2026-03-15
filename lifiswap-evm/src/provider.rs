@@ -175,24 +175,7 @@ impl Provider for EvmProvider {
                 let amount = if is_native {
                     Some(native_balance.to_string())
                 } else {
-                    match token.address.parse::<Address>() {
-                        Ok(token_addr) => {
-                            let contract = IERC20Balance::new(token_addr, &provider);
-                            match contract.balanceOf(addr).call().await {
-                                Ok(bal) => Some(bal.to_string()),
-                                Err(e) => {
-                                    tracing::warn!(
-                                        token = %token.symbol,
-                                        address = %token.address,
-                                        error = %e,
-                                        "failed to query ERC-20 balance, skipping"
-                                    );
-                                    None
-                                }
-                            }
-                        }
-                        Err(_) => None,
-                    }
+                    query_erc20_balance(&provider, addr, token).await
                 };
 
                 results.push(TokenAmount {
@@ -225,5 +208,26 @@ impl Provider for EvmProvider {
             ));
             Ok(executor)
         })
+    }
+}
+
+async fn query_erc20_balance(
+    provider: &impl AlloyProvider,
+    owner: Address,
+    token: &Token,
+) -> Option<String> {
+    let token_addr: Address = token.address.parse().ok()?;
+    let contract = IERC20Balance::new(token_addr, provider);
+    match contract.balanceOf(owner).call().await {
+        Ok(bal) => Some(bal.to_string()),
+        Err(e) => {
+            tracing::warn!(
+                token = %token.symbol,
+                address = %token.address,
+                error = %e,
+                "failed to query ERC-20 balance, skipping"
+            );
+            None
+        }
     }
 }

@@ -43,6 +43,12 @@ pub fn error_to_execution_error(err: &LiFiError) -> ExecutionError {
 /// - Verify the signer address
 /// - Build the pipeline
 /// - Provide a `parse_error` function
+///
+/// # Errors
+///
+/// Returns the (possibly parsed) error from the pipeline. On failure,
+/// the step's execution or action status is also updated.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_step_pipeline(
     client: &LiFiClient,
     step: &mut LiFiStepExtended,

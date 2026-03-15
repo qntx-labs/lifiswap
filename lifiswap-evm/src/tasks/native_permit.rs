@@ -89,7 +89,7 @@ impl EvmNativePermitTask {
             .allowance(owner, spender)
             .call()
             .await
-            .map_or(false, |allowance| allowance >= from_amount)
+            .is_ok_and(|allowance| allowance >= from_amount)
     }
 }
 

@@ -175,6 +175,7 @@ impl ExecutionTask for SvmSendAndConfirmTask {
         Box::pin(async move { !ctx.has_committed_transaction() })
     }
 
+    #[allow(clippy::excessive_nesting)]
     fn run<'a>(
         &'a self,
         ctx: &'a mut ExecutionContext<'_>,

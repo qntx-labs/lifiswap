@@ -283,18 +283,18 @@ impl LiFiClient {
                 continue;
             }
 
-            if step_idx > 0 {
-                let prev_to_amount = route.steps[step_idx - 1]
-                    .execution
-                    .as_ref()
-                    .and_then(|e| e.to_amount.clone());
-                if let Some(to_amount) = prev_to_amount {
-                    route.steps[step_idx].action.from_amount = Some(to_amount.clone());
-                    if let Some(ref mut included) = route.steps[step_idx].included_steps
-                        && let Some(first) = included.first_mut()
-                    {
-                        first.action.from_amount = Some(to_amount);
-                    }
+            if let Some(to_amount) = step_idx
+                .checked_sub(1)
+                .and_then(|prev| route.steps[prev].execution.as_ref())
+                .and_then(|e| e.to_amount.clone())
+            {
+                route.steps[step_idx].action.from_amount = Some(to_amount.clone());
+                if let Some(first) = route.steps[step_idx]
+                    .included_steps
+                    .as_mut()
+                    .and_then(|s| s.first_mut())
+                {
+                    first.action.from_amount = Some(to_amount);
                 }
             }
 
