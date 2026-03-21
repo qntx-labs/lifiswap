@@ -35,7 +35,7 @@ solana-rpc-client = "3"
 solana-rpc-client-api = "3"
 solana-transaction-status = "3"
 solana-commitment-config = "3"
-bincode = "1"
+bincode = "3"
 base64 = "0.22"
 bs58 = "0.5"
 
