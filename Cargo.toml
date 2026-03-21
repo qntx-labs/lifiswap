@@ -30,7 +30,7 @@ wiremock = "0.6"
 dashmap = "6"
 alloy = { version = "1", features = ["full", "dyn-abi", "eip712", "ens"] }
 bitcoin = { version = "0.32", features = ["base64", "rand", "serde"] }
-solana-sdk = { version = "3", features = ["full"] }
+solana-sdk = { version = "4", features = ["full"] }
 solana-rpc-client = "3"
 solana-rpc-client-api = "3"
 solana-transaction-status = "3"
