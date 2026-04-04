@@ -30,6 +30,7 @@ pub mod signer;
 mod tasks;
 
 use alloy::primitives::Address;
+pub use alloy::signers::local::PrivateKeySigner;
 pub use executor::Permit2Config;
 pub use provider::EvmProvider;
 pub use rpc::{RpcUrlResolver, StaticRpcUrls};
