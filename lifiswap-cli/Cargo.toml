@@ -18,7 +18,7 @@ lifiswap-btc = { workspace = true }
 
 clap = { version = "4", features = ["derive", "env", "color"] }
 tokio = { workspace = true }
-comfy-table = "7"
+comfy-table = "8"
 console = "0.15"
 indicatif = "0.18"
 dialoguer = "0.12"
